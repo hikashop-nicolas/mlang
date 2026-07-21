@@ -3,7 +3,8 @@
 // propagate until try...otherwise; null propagates through arithmetic; three-valued and/or.
 // The parser AST is consumed structurally (one place to adapt if its shape changes).
 
-import { MError, NULL, err, equals, compare, logical, number, text, rowRecord, type MFunction, type MValue } from "./values.js";
+import { MError, NULL, date, datetime, duration, err, equals, compare, logical, number, text, time, rowRecord, type MFunction, type MValue } from "./values.js";
+import { civilFromDays, daysFromCivil } from "./temporal.js";
 
 // Minimal structural view of parser nodes; every access goes through helpers below.
 interface Node {
@@ -220,7 +221,7 @@ export function evalNode(n: Node, env: Env): MValue {
       const ops = (child(n, "operators").elements as Node[]) ?? [];
       for (let i = ops.length - 1; i >= 0; i--) {
         const op = ops[i]!.constantKind;
-        if (op === "-") v = v.kind === "null" ? NULL : number(-expectNumber(v));
+        if (op === "-") v = v.kind === "null" ? NULL : v.kind === "duration" ? duration(-v.secs) : number(-expectNumber(v));
         else if (op === "+") v = v.kind === "null" ? NULL : number(+expectNumber(v));
         else if (op === "not") {
           if (v.kind === "null") v = NULL;
@@ -385,8 +386,13 @@ function arithmetic(n: Node, env: Env): MValue {
       for (const [k, v2] of r.fields) fields.set(k, v2);
       return { kind: "record", fields };
     }
+    if (l.kind === "date" && r.kind === "time") return datetime(l.y, l.m, l.d, r.secs); // date & time -> datetime
     err("Expression.Error", `Cannot apply & to ${l.kind} and ${r.kind}.`);
   }
+
+  const temporal = temporalArithmetic(op, l, r);
+  if (temporal) return temporal;
+
   const a = expectNumber(l);
   const b = expectNumber(r);
   switch (op) {
@@ -399,6 +405,46 @@ function arithmetic(n: Node, env: Env): MValue {
     default:
       err("Expression.Error", `Unsupported operator ${op}`);
   }
+}
+
+// Temporal operator combinations per the spec's operator tables; null when not temporal.
+function temporalArithmetic(op: string, l: MValue, r: MValue): MValue | null {
+  const dtSecs = (v: Extract<MValue, { kind: "date" } | { kind: "datetime" }>): number =>
+    daysFromCivil(v.y, v.m, v.d) * 86400 + (v.kind === "datetime" ? v.secs : 0);
+  const fromSecs = (total: number, asDate: boolean): MValue => {
+    const days = Math.floor(total / 86400);
+    const secs = total - days * 86400;
+    const c = civilFromDays(days);
+    return asDate ? date(c.y, c.m, c.d) : datetime(c.y, c.m, c.d, secs);
+  };
+  if (op === "+") {
+    if ((l.kind === "date" || l.kind === "datetime") && r.kind === "duration") return fromSecs(dtSecs(l) + r.secs, l.kind === "date");
+    if (l.kind === "duration" && (r.kind === "date" || r.kind === "datetime")) return fromSecs(dtSecs(r) + l.secs, r.kind === "date");
+    if (l.kind === "time" && r.kind === "duration") return time(((l.secs + r.secs) % 86400 + 86400) % 86400);
+    if (l.kind === "duration" && r.kind === "time") return time(((r.secs + l.secs) % 86400 + 86400) % 86400);
+    if (l.kind === "duration" && r.kind === "duration") return duration(l.secs + r.secs);
+    return null;
+  }
+  if (op === "-") {
+    if ((l.kind === "date" || l.kind === "datetime") && (r.kind === "date" || r.kind === "datetime") && l.kind === r.kind)
+      return duration(dtSecs(l) - dtSecs(r));
+    if ((l.kind === "date" || l.kind === "datetime") && r.kind === "duration") return fromSecs(dtSecs(l) - r.secs, l.kind === "date");
+    if (l.kind === "time" && r.kind === "time") return duration(l.secs - r.secs);
+    if (l.kind === "time" && r.kind === "duration") return time(((l.secs - r.secs) % 86400 + 86400) % 86400);
+    if (l.kind === "duration" && r.kind === "duration") return duration(l.secs - r.secs);
+    return null;
+  }
+  if (op === "*") {
+    if (l.kind === "duration" && r.kind === "number") return duration(l.secs * r.value);
+    if (l.kind === "number" && r.kind === "duration") return duration(l.value * r.secs);
+    return null;
+  }
+  if (op === "/") {
+    if (l.kind === "duration" && r.kind === "number") return duration(l.secs / r.value);
+    if (l.kind === "duration" && r.kind === "duration") return number(l.secs / r.secs);
+    return null;
+  }
+  return null;
 }
 
 const expectNumber = (v: MValue): number => {
@@ -424,6 +470,10 @@ function matchesPrimitive(v: MValue, t: string): boolean {
     case "record": return v.kind === "record";
     case "table": return v.kind === "table";
     case "function": return v.kind === "function";
+    case "date": return v.kind === "date";
+    case "time": return v.kind === "time";
+    case "datetime": return v.kind === "datetime";
+    case "duration": return v.kind === "duration";
     default: return false;
   }
 }

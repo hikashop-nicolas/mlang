@@ -7,6 +7,10 @@ export type MValue =
   | { kind: "logical"; value: boolean }
   | { kind: "number"; value: number }
   | { kind: "text"; value: string }
+  | { kind: "date"; y: number; m: number; d: number }
+  | { kind: "time"; secs: number } // seconds since midnight (fractional)
+  | { kind: "datetime"; y: number; m: number; d: number; secs: number }
+  | { kind: "duration"; secs: number } // fractional seconds, may be negative
   | { kind: "list"; items: MValue[] }
   | { kind: "record"; fields: Map<string, MValue> } // insertion-ordered
   | { kind: "table"; columns: string[]; rows: MValue[][]; types?: Map<string, string> }
@@ -46,6 +50,10 @@ export const logical = (v: boolean): MValue => (v ? TRUE : FALSE);
 export const number = (v: number): MValue => ({ kind: "number", value: v });
 export const text = (v: string): MValue => ({ kind: "text", value: v });
 export const list = (items: MValue[]): MValue => ({ kind: "list", items });
+export const date = (y: number, m: number, d: number): MValue => ({ kind: "date", y, m, d });
+export const time = (secs: number): MValue => ({ kind: "time", secs });
+export const datetime = (y: number, m: number, d: number, secs: number): MValue => ({ kind: "datetime", y, m, d, secs });
+export const duration = (secs: number): MValue => ({ kind: "duration", secs });
 export const record = (entries: [string, MValue][]): MValue => ({ kind: "record", fields: new Map(entries) });
 export const table = (columns: string[], rows: MValue[][], types?: Map<string, string>): MValue => ({ kind: "table", columns, rows, types });
 
@@ -75,6 +83,16 @@ export function equals(a: MValue, b: MValue): boolean {
     case "logical": return a.value === (b as typeof a).value;
     case "number": return a.value === (b as typeof a).value;
     case "text": return a.value === (b as typeof a).value;
+    case "date": {
+      const bd = b as typeof a;
+      return a.y === bd.y && a.m === bd.m && a.d === bd.d;
+    }
+    case "datetime": {
+      const bd = b as typeof a;
+      return a.y === bd.y && a.m === bd.m && a.d === bd.d && a.secs === bd.secs;
+    }
+    case "time": return a.secs === (b as typeof a).secs;
+    case "duration": return a.secs === (b as typeof a).secs;
     case "list": {
       const bl = b as typeof a;
       return a.items.length === bl.items.length && a.items.every((x, i) => equals(x, bl.items[i]!));
@@ -109,16 +127,28 @@ export function compare(a: MValue, b: MValue): number {
   if (a.kind === "number") return a.value - (b as typeof a).value;
   if (a.kind === "text") return a.value < (b as typeof a).value ? -1 : a.value > (b as typeof a).value ? 1 : 0;
   if (a.kind === "logical") return Number(a.value) - Number((b as typeof a).value);
+  if (a.kind === "date" || a.kind === "datetime") {
+    const bd = b as typeof a;
+    const as = a.kind === "datetime" ? a.secs : 0;
+    const bs = bd.kind === "datetime" ? bd.secs : 0;
+    return a.y - bd.y || a.m - bd.m || a.d - bd.d || as - bs;
+  }
+  if (a.kind === "time" || a.kind === "duration") return a.secs - (b as typeof a).secs;
   err("Expression.Error", `Cannot compare ${a.kind} values`);
 }
 
-/** Plain-JS projection for tests, demos and hosts. */
+/** Plain-JS projection for tests, demos and hosts. Temporal values project to tagged
+    strings so they can't be confused with plain text. */
 export function toJS(v: MValue): unknown {
   switch (v.kind) {
     case "null": return null;
     case "logical": return v.value;
     case "number": return v.value;
     case "text": return v.value;
+    case "date": return `#date(${v.y},${v.m},${v.d})`;
+    case "time": return `#time(${v.secs})`;
+    case "datetime": return `#datetime(${v.y},${v.m},${v.d},${v.secs})`;
+    case "duration": return `#duration(${v.secs})`;
     case "list": return v.items.map(toJS);
     case "record": return Object.fromEntries([...v.fields].map(([k, x]) => [k, toJS(x)]));
     case "table": return { columns: v.columns, rows: v.rows.map((r) => r.map(toJS)) };

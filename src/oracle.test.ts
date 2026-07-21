@@ -41,6 +41,24 @@ function parseValue(p: P): unknown {
   if (c === "[") return parseRecord(p);
   if (c === "{") return parseList(p);
   if (lit(p, "#table")) return parseTable(p);
+  // Longest-prefix first: #datetimezone before #datetime before #date.
+  if (lit(p, "#datetimezone")) throw new Error("pqout: datetimezone not supported yet");
+  if (lit(p, "#datetime")) {
+    const [y, mo, d, h, mi, s] = parseNumArgs(p, 6);
+    return `#datetime(${y},${mo},${d},${h! * 3600 + mi! * 60 + s!})`;
+  }
+  if (lit(p, "#date")) {
+    const [y, mo, d] = parseNumArgs(p, 3);
+    return `#date(${y},${mo},${d})`;
+  }
+  if (lit(p, "#time")) {
+    const [h, mi, s] = parseNumArgs(p, 3);
+    return `#time(${h! * 3600 + mi! * 60 + s!})`;
+  }
+  if (lit(p, "#duration")) {
+    const [d, h, mi, s] = parseNumArgs(p, 4);
+    return `#duration(${d! * 86400 + h! * 3600 + mi! * 60 + s!})`;
+  }
   if (lit(p, "#infinity")) return Infinity;
   if (lit(p, "-#infinity")) return -Infinity;
   if (lit(p, "#nan")) return NaN;
@@ -53,6 +71,21 @@ function parseValue(p: P): unknown {
     return Number(m[0]);
   }
   throw new Error(`pqout: unexpected value at ${p.i}: ...${p.s.slice(p.i, p.i + 30)}`);
+}
+
+function parseNumArgs(p: P, n: number): number[] {
+  expectLit(p, "(");
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    ws(p);
+    const m = /^-?\d+(\.\d+)?/.exec(p.s.slice(p.i));
+    if (!m) throw new Error(`pqout: expected number arg at ${p.i}`);
+    out.push(Number(m[0]));
+    p.i += m[0].length;
+    if (i < n - 1) expectLit(p, ",");
+  }
+  expectLit(p, ")");
+  return out;
 }
 
 function parseText(p: P): string {
@@ -154,6 +187,10 @@ function mvalueToPlain(v: MValue): unknown {
     case "logical": return v.value;
     case "number": return v.value;
     case "text": return v.value;
+    case "date": return `#date(${v.y},${v.m},${v.d})`;
+    case "time": return `#time(${v.secs})`;
+    case "datetime": return `#datetime(${v.y},${v.m},${v.d},${v.secs})`;
+    case "duration": return `#duration(${v.secs})`;
     case "list": return v.items.map(mvalueToPlain);
     case "record": return Object.fromEntries([...v.fields].map(([k, x]) => [k, mvalueToPlain(x)]));
     case "table": return { table: true, columns: v.columns, rows: v.rows.map((r) => r.map(mvalueToPlain)) };
