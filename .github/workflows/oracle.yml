@@ -27,19 +27,23 @@ jobs:
         shell: pwsh
         run: |
           & $env:PQTEST --help *> pqtest-help.txt
+          & $env:PQTEST compare --help *> pqtest-compare-help.txt
           exit 0
         continue-on-error: true
 
       - name: Run oracle cases
         shell: pwsh
         run: |
+          # PQTest requires an extension even for plain M; a trivial empty connector
+          # section satisfies it without contributing any functions.
+          Set-Content -Path trivial.pq -Value "[Version = `"1.0.0`"]`nsection Trivial;"
           $cases = Get-ChildItem test/oracle/cases -Filter *.query.pq
           foreach ($f in $cases) {
             Write-Host "=== $($f.Name) ==="
             $log = Join-Path $f.DirectoryName ($f.BaseName + ".log.txt")
             # compare: evaluates the query; with no existing .pqout it writes one next to
             # the query file (that output is the fixture we want).
-            & $env:PQTEST compare --queryFile $f.FullName --prettyPrint *> $log
+            & $env:PQTEST compare --extension trivial.pq --queryFile $f.FullName --prettyPrint *> $log
             Get-Content $log
           }
           exit 0
