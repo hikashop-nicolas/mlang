@@ -268,8 +268,18 @@ export function evalNode(n: Node, env: Env): MValue {
       const t = typeOfNode(child(n, "right"));
       return logical(matchesPrimitive(v, t));
     }
-    case "TypePrimaryType":
-      return { kind: "type", name: primitiveName(child(n, "paired")) };
+    case "MetadataExpression":
+      // `value meta record` - the metadata is advisory; evaluate and return the value.
+      return evalNode(child(n, "left"), env);
+    case "TypePrimaryType": {
+      const paired = child(n, "paired");
+      // `type table [Col = t, ...]` - encode the column names so #table can consume it.
+      if (paired.kind === "TableType") {
+        const specs = tableTypeFields(paired);
+        return { kind: "type", name: `table:${specs.join("\t")}` };
+      }
+      return { kind: "type", name: primitiveName(paired) };
+    }
     case "PrimitiveType":
       return { kind: "type", name: primitiveName(n) };
     case "NotImplementedExpression":
@@ -457,6 +467,24 @@ const expectLogical = (v: MValue): boolean => {
 };
 
 const primitiveName = (n: Node): string => (n.primitiveTypeKind as string) ?? "any";
+
+/** Column names from a `table [Col = t, ...]` type node (decoding #"quoted" identifiers). */
+function tableTypeFields(tableType: Node): string[] {
+  const list = asNode(tableType.rowType ?? tableType.fields ?? tableType.content);
+  // Walk to the FieldSpecificationList's ArrayWrapper of FieldSpecification nodes.
+  const specs: Node[] = [];
+  const collect = (node: unknown): void => {
+    const nd = node as Node;
+    if (!nd || typeof nd !== "object") return;
+    if (nd.kind === "FieldSpecification") specs.push(nd);
+    for (const v of Object.values(nd)) {
+      if (Array.isArray(v)) v.forEach((x) => collect((x as Node)?.node ?? x));
+      else if (v && typeof v === "object") collect(v);
+    }
+  };
+  collect(list.elements ? list : tableType);
+  return specs.map((s) => decodeIdentifier(child(s, "name").literal as string));
+}
 const typeOfNode = (n: Node): string => (n.kind === "PrimitiveType" ? primitiveName(n) : n.kind === "NullablePrimitiveType" ? primitiveName(child(n, "paired")) : "any");
 
 function matchesPrimitive(v: MValue, t: string): boolean {

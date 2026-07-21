@@ -33,4 +33,22 @@ export function registerConstants(env: Env): void {
   def("ExtraValues.List", N(0));
   def("ExtraValues.Error", N(1));
   def("ExtraValues.Ignore", N(2));
+
+  // Compression selectors (used by Binary.Decompress).
+  def("Compression.None", N(0));
+  def("Compression.GZip", N(1));
+  def("Compression.Deflate", N(2));
+
+  // Ascribed type values (the `X.Type` names Excel emits in TransformColumnTypes). The .name
+  // routes conversion in convert.ts; the numeric family all coerces to a number.
+  const ty = (coerce: string): MValue => ({ kind: "type", name: coerce });
+  for (const n of ["Int64.Type", "Number.Type", "Decimal.Type", "Currency.Type", "Percentage.Type"]) def(n, ty("number"));
+  def("Text.Type", ty("text"));
+  def("Logical.Type", ty("logical"));
+  def("Date.Type", ty("date"));
+  def("Time.Type", ty("time"));
+  def("DateTime.Type", ty("datetime"));
+  def("Duration.Type", ty("duration"));
+  def("Binary.Type", ty("binary"));
+  def("Any.Type", ty("any"));
 }

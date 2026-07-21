@@ -2,6 +2,7 @@
 // binary-producing CONNECTORS (File.Contents, Web.Contents, ...) are in scope too and arrive
 // through host bindings - a host hands back a binary value the same way sheetedit hands back
 // Excel.CurrentWorkbook - so they compose with these functions unchanged.
+import { gunzipSync, inflateSync } from "fflate";
 import type { Env } from "../interpret.js";
 import { binary, err, number, text, type MValue } from "../values.js";
 import { fn, textOf } from "./helpers.js";
@@ -44,6 +45,17 @@ export function registerBinary(env: Env): void {
     return text(encName(a[1]) === "Hex" ? bytesToHex(bytes) : bytesToB64(bytes));
   }));
   def("Binary.Length", fn("Binary.Length", [{ name: "binary" }], (a) => number(toBytes(a[0]!, "Binary.Length").length)));
+
+  // Binary.Decompress(binary, compression): Compression.None(0)/GZip(1)/Deflate(2). Excel's
+  // "Deflate" is raw DEFLATE (no zlib header), which fflate's inflateSync expects.
+  def("Binary.Decompress", fn("Binary.Decompress", [{ name: "binary" }, { name: "compressionType" }], (a) => {
+    const bytes = toBytes(a[0]!, "Binary.Decompress");
+    const c = a[1]!.kind === "number" ? a[1]!.value : 2;
+    if (c === 0) return binary(bytes);
+    if (c === 1) return binary(gunzipSync(bytes));
+    if (c === 2) return binary(inflateSync(bytes));
+    err("Expression.Error", `Binary.Decompress: unsupported compression ${c}.`);
+  }));
 
   // Text <-> Binary treat the bytes as encoded text (UTF-8 by default).
   def("Text.FromBinary", fn("Text.FromBinary", [{ name: "binary" }, { name: "encoding", optional: true }], (a) =>

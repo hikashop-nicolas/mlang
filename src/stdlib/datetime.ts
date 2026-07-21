@@ -108,6 +108,30 @@ export function registerDateTime(env: Env): void {
     const d = asDateish(a[0]!, "Date.DayOfYear");
     return number(daysFromCivil(d.y, d.m, d.d) - daysFromCivil(d.y, 1, 1) + 1);
   }));
+  const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  def("Date.DayOfWeekName", nn("Date.DayOfWeekName", [{ name: "date" }, { name: "culture", optional: true }], (a) => {
+    const d = asDateish(a[0]!, "Date.DayOfWeekName");
+    return text(DAY_NAMES[dayOfWeekSunday0(daysFromCivil(d.y, d.m, d.d))]!);
+  }));
+  def("Date.MonthName", nn("Date.MonthName", [{ name: "date" }, { name: "culture", optional: true }], (a) => text(MONTH_NAMES[asDateish(a[0]!, "Date.MonthName").m - 1]!)));
+
+  // List.Dates(start, count, step): count dates starting at `start`, each `step` (a duration) apart.
+  def("List.Dates", fn("List.Dates", [{ name: "start" }, { name: "count" }, { name: "step" }], (a) => {
+    const s = a[0]!;
+    if (s.kind !== "date") err("Expression.Error", "List.Dates: start must be a date.");
+    const count = numOf(a[1]!, "count");
+    const step = a[2]!;
+    if (step.kind !== "duration") err("Expression.Error", "List.Dates: step must be a duration.");
+    const stepDays = Math.round(step.secs / 86400);
+    const base = daysFromCivil(s.y, s.m, s.d);
+    const out: MValue[] = [];
+    for (let i = 0; i < count; i++) {
+      const c = civilFromDays(base + i * stepDays);
+      out.push(date(c.y, c.m, c.d));
+    }
+    return { kind: "list", items: out };
+  }));
   def("Date.StartOfMonth", nn("Date.StartOfMonth", [{ name: "date" }], (a) => keepKind(a[0]!, (d) => ({ ...d, d: 1 }), true)));
   def("Date.EndOfMonth", nn("Date.EndOfMonth", [{ name: "date" }], (a) => keepKind(a[0]!, (d) => ({ ...d, d: daysInMonth(d.y, d.m) }), false)));
   def("Date.StartOfYear", nn("Date.StartOfYear", [{ name: "date" }], (a) => keepKind(a[0]!, (d) => ({ y: d.y, m: 1, d: 1 }), true)));

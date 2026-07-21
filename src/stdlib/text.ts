@@ -149,6 +149,9 @@ export function registerText(env: Env): void {
       return list(parts.map(text));
     });
   }));
+  // SplitByNothing: the whole value as a single field (used by Table.FromList to make 1 column).
+  def("Splitter.SplitByNothing", fn("Splitter.SplitByNothing", [], () => fn("splitter", [{ name: "text" }], (b) => list([b[0] ?? NULL]))));
+
   def("Splitter.SplitTextByPositions", fn("Splitter.SplitTextByPositions", [{ name: "positions" }], (a) => {
     const pos = listOf(a[0]!, "positions").map((v) => numOf(v, "position"));
     return fn("splitter", [{ name: "text" }], (b) => {
