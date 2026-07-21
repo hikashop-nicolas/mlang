@@ -118,6 +118,42 @@ export function registerText(env: Env): void {
     text(textOf(a[0]!, "Text.PadEnd").padEnd(numOf(a[1]!, "count"), a[2] ? textOf(a[2], "character") : " "))));
   def("Text.Repeat", nn("Text.Repeat", [{ name: "text" }, { name: "count" }], (a) => text(textOf(a[0]!, "Text.Repeat").repeat(numOf(a[1]!, "count")))));
   def("Text.Reverse", nn("Text.Reverse", [{ name: "text" }], (a) => text([...textOf(a[0]!, "Text.Reverse")].reverse().join(""))));
+  def("Text.Clean", nn("Text.Clean", [{ name: "text" }], (a) => text(textOf(a[0]!, "Text.Clean").replace(/[\x00-\x1F\x7F-\x9F]/g, ""))));
+  def("Text.Select", nn("Text.Select", [{ name: "text" }, { name: "selectChars" }], (a) => {
+    const allow = new Set([...(a[1]!.kind === "list" ? a[1]!.items.map((v) => textOf(v, "Text.Select")) : [textOf(a[1]!, "Text.Select")])].flatMap((s) => [...s]));
+    return text([...textOf(a[0]!, "Text.Select")].filter((c) => allow.has(c)).join(""));
+  }));
+
+  // Delimiter extraction. Index (number) picks the Nth occurrence; a {index, RelativePosition}
+  // pair is accepted with the position ignored (Tier-2 approximation).
+  const idxOf = (v: MValue | undefined): number => (v?.kind === "number" ? v.value : v?.kind === "list" && v.items[0]?.kind === "number" ? v.items[0].value : 0);
+  def("Text.BeforeDelimiter", nn("Text.BeforeDelimiter", [{ name: "text" }, { name: "delimiter" }, { name: "index", optional: true }], (a) => {
+    const s = textOf(a[0]!, "Text.BeforeDelimiter");
+    const d = textOf(a[1]!, "delimiter");
+    const parts = s.split(d);
+    const i = idxOf(a[2]);
+    return text(i < parts.length - 1 ? parts.slice(0, i + 1).join(d) : "");
+  }));
+  def("Text.AfterDelimiter", nn("Text.AfterDelimiter", [{ name: "text" }, { name: "delimiter" }, { name: "index", optional: true }], (a) => {
+    const s = textOf(a[0]!, "Text.AfterDelimiter");
+    const d = textOf(a[1]!, "delimiter");
+    const parts = s.split(d);
+    const i = idxOf(a[2]);
+    return text(i < parts.length - 1 ? parts.slice(i + 1).join(d) : "");
+  }));
+  def("Text.BetweenDelimiters", nn("Text.BetweenDelimiters", [{ name: "text" }, { name: "start" }, { name: "end" }, { name: "startIndex", optional: true }, { name: "endIndex", optional: true }], (a) => {
+    const s = textOf(a[0]!, "Text.BetweenDelimiters");
+    const start = textOf(a[1]!, "start");
+    const end = textOf(a[2]!, "end");
+    const from = s.indexOf(start);
+    if (from < 0) return text("");
+    const rest = s.slice(from + start.length);
+    const to = rest.indexOf(end);
+    return text(to < 0 ? "" : rest.slice(0, to));
+  }));
+
+  def("Character.FromNumber", fn("Character.FromNumber", [{ name: "number" }], (a) => text(String.fromCodePoint(numOf(a[0]!, "Character.FromNumber")))));
+  def("Character.ToNumber", fn("Character.ToNumber", [{ name: "character" }], (a) => number(textOf(a[0]!, "Character.ToNumber").codePointAt(0) ?? 0)));
 
   // Splitters (function factories used by Table.SplitColumn).
   def("Splitter.SplitTextByDelimiter", fn("Splitter.SplitTextByDelimiter", [{ name: "delimiter" }, { name: "quoteStyle", optional: true }], (a) => {
@@ -151,6 +187,27 @@ export function registerText(env: Env): void {
   }));
   // SplitByNothing: the whole value as a single field (used by Table.FromList to make 1 column).
   def("Splitter.SplitByNothing", fn("Splitter.SplitByNothing", [], () => fn("splitter", [{ name: "text" }], (b) => list([b[0] ?? NULL]))));
+
+  // Split using each delimiter in the list once, in order (parts = delimiters + 1).
+  def("Splitter.SplitTextByEachDelimiter", fn("Splitter.SplitTextByEachDelimiter", [{ name: "delimiters" }, { name: "quoteStyle", optional: true }, { name: "startAtEnd", optional: true }], (a) => {
+    const delims = listOf(a[0]!, "delimiters").map((v) => textOf(v, "delimiter"));
+    return fn("splitter", [{ name: "text" }], (b) => {
+      let rest = textOf(b[0]!, "split input");
+      const parts: MValue[] = [];
+      for (const d of delims) {
+        const i = rest.indexOf(d);
+        if (i < 0) {
+          parts.push(text(rest));
+          rest = "";
+          continue;
+        }
+        parts.push(text(rest.slice(0, i)));
+        rest = rest.slice(i + d.length);
+      }
+      parts.push(text(rest));
+      return list(parts);
+    });
+  }));
 
   def("Splitter.SplitTextByPositions", fn("Splitter.SplitTextByPositions", [{ name: "positions" }], (a) => {
     const pos = listOf(a[0]!, "positions").map((v) => numOf(v, "position"));

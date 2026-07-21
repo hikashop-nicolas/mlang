@@ -132,6 +132,35 @@ export function registerDateTime(env: Env): void {
     }
     return { kind: "list", items: out };
   }));
+  def("Date.QuarterOfYear", nn("Date.QuarterOfYear", [{ name: "date" }], (a) => number(Math.floor((asDateish(a[0]!, "Date.QuarterOfYear").m - 1) / 3) + 1)));
+  def("Date.StartOfQuarter", nn("Date.StartOfQuarter", [{ name: "date" }], (a) => keepKind(a[0]!, (d) => ({ ...d, m: Math.floor((d.m - 1) / 3) * 3 + 1, d: 1 }), true)));
+  def("Date.EndOfQuarter", nn("Date.EndOfQuarter", [{ name: "date" }], (a) => keepKind(a[0]!, (d) => { const m = Math.floor((d.m - 1) / 3) * 3 + 3; return { y: d.y, m, d: daysInMonth(d.y, m) }; }, false)));
+  const startOfWeek = (d: { y: number; m: number; d: number }, first: number): { y: number; m: number; d: number } => {
+    const days = daysFromCivil(d.y, d.m, d.d);
+    const back = (dayOfWeekSunday0(days) - first + 7) % 7;
+    return civilFromDays(days - back);
+  };
+  def("Date.StartOfWeek", nn("Date.StartOfWeek", [{ name: "date" }, { name: "firstDayOfWeek", optional: true }], (a) =>
+    keepKind(a[0]!, (d) => startOfWeek(d, a[1]?.kind === "number" ? a[1].value : 0), true)));
+  def("Date.EndOfWeek", nn("Date.EndOfWeek", [{ name: "date" }, { name: "firstDayOfWeek", optional: true }], (a) =>
+    keepKind(a[0]!, (d) => { const s = startOfWeek(d, a[1]?.kind === "number" ? a[1].value : 0); return civilFromDays(daysFromCivil(s.y, s.m, s.d) + 6); }, false)));
+  def("Date.WeekOfYear", nn("Date.WeekOfYear", [{ name: "date" }, { name: "firstDayOfWeek", optional: true }], (a) => {
+    const d = asDateish(a[0]!, "Date.WeekOfYear");
+    const first = a[1]?.kind === "number" ? a[1].value : 0;
+    const jan1 = daysFromCivil(d.y, 1, 1);
+    const offset = (dayOfWeekSunday0(jan1) - first + 7) % 7; // days of week 1 before Jan 1's weekday
+    return number(Math.floor((daysFromCivil(d.y, d.m, d.d) - jan1 + offset) / 7) + 1);
+  }));
+  def("Date.WeekOfMonth", nn("Date.WeekOfMonth", [{ name: "date" }, { name: "firstDayOfWeek", optional: true }], (a) => {
+    const d = asDateish(a[0]!, "Date.WeekOfMonth");
+    const first = a[1]?.kind === "number" ? a[1].value : 0;
+    const first1 = daysFromCivil(d.y, d.m, 1);
+    const offset = (dayOfWeekSunday0(first1) - first + 7) % 7;
+    return number(Math.floor((daysFromCivil(d.y, d.m, d.d) - first1 + offset) / 7) + 1);
+  }));
+  def("Date.StartOfDay", nn("Date.StartOfDay", [{ name: "dateTime" }], (a) => keepKind(a[0]!, (d) => d, true)));
+  def("Date.EndOfDay", nn("Date.EndOfDay", [{ name: "dateTime" }], (a) => keepKind(a[0]!, (d) => d, false)));
+
   def("Date.StartOfMonth", nn("Date.StartOfMonth", [{ name: "date" }], (a) => keepKind(a[0]!, (d) => ({ ...d, d: 1 }), true)));
   def("Date.EndOfMonth", nn("Date.EndOfMonth", [{ name: "date" }], (a) => keepKind(a[0]!, (d) => ({ ...d, d: daysInMonth(d.y, d.m) }), false)));
   def("Date.StartOfYear", nn("Date.StartOfYear", [{ name: "date" }], (a) => keepKind(a[0]!, (d) => ({ y: d.y, m: 1, d: 1 }), true)));

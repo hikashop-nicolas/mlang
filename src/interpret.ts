@@ -134,9 +134,14 @@ export function evalNode(n: Node, env: Env): MValue {
       const items: MValue[] = [];
       for (const el of csvNodes(n.content)) {
         if (el.kind === "RangeExpression") {
-          const lo = expectNumber(evalNode(child(el, "left"), env));
-          const hi = expectNumber(evalNode(child(el, "right"), env));
-          for (let i = lo; i <= hi; i++) items.push(number(i));
+          const loV = evalNode(child(el, "left"), env);
+          const hiV = evalNode(child(el, "right"), env);
+          if (loV.kind === "text" && hiV.kind === "text") {
+            // Character range, e.g. {"0".."9"} or {"a".."z"}.
+            for (let cp = loV.value.codePointAt(0)!; cp <= hiV.value.codePointAt(0)!; cp++) items.push(text(String.fromCodePoint(cp)));
+          } else {
+            for (let i = expectNumber(loV); i <= expectNumber(hiV); i++) items.push(number(i));
+          }
         } else {
           items.push(evalNode(el, env));
         }

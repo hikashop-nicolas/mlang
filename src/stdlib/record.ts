@@ -50,4 +50,12 @@ export function registerRecord(env: Env): void {
     const r = rec(a[0]!, "Record.ToTable");
     return { kind: "table", columns: ["Name", "Value"], rows: [...r.fields].map(([k, v]) => [text(k), v]) };
   }));
+  def("Record.FieldValues", fn("Record.FieldValues", [{ name: "record" }], (a) => list([...rec(a[0]!, "Record.FieldValues").fields.values()])));
+  def("Record.FromList", fn("Record.FromList", [{ name: "values" }, { name: "fields" }], (a) => {
+    const vals = a[0]!.kind === "list" ? a[0]!.items : err("Expression.Error", "Record.FromList: values must be a list.");
+    const names = namesOf(a[1]!, "Record.FromList field");
+    const fields = new Map<string, MValue>();
+    names.forEach((n, i) => fields.set(n, vals[i] ?? NULL));
+    return { kind: "record", fields };
+  }));
 }

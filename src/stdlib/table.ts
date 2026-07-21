@@ -32,6 +32,64 @@ export function registerTable(env: Env): void {
   def("Table.RowCount", fn("Table.RowCount", [{ name: "table" }], (a) => number(asTable(a[0]!, "Table.RowCount").rows.length)));
   def("Table.ColumnCount", fn("Table.ColumnCount", [{ name: "table" }], (a) => number(asTable(a[0]!, "Table.ColumnCount").columns.length)));
   def("Table.ColumnNames", fn("Table.ColumnNames", [{ name: "table" }], (a) => list(asTable(a[0]!, "Table.ColumnNames").columns.map(text))));
+  def("Table.Column", fn("Table.Column", [{ name: "table" }, { name: "column" }], (a) => {
+    const t = asTable(a[0]!, "Table.Column");
+    const ci = colIndex(t, textOf(a[1]!, "Table.Column"));
+    return list(t.rows.map((r) => r[ci] ?? NULL));
+  }));
+  def("Table.TransformColumnNames", fn("Table.TransformColumnNames", [{ name: "table" }, { name: "nameGenerator" }], (a) => {
+    const t = asTable(a[0]!, "Table.TransformColumnNames");
+    return table(t.columns.map((c) => textOf(callFn(a[1]!, [text(c)]), "new column name")), t.rows, t.types);
+  }));
+  def("Table.PrefixColumns", fn("Table.PrefixColumns", [{ name: "table" }, { name: "prefix" }], (a) => {
+    const t = asTable(a[0]!, "Table.PrefixColumns");
+    const p = textOf(a[1]!, "prefix");
+    return table(t.columns.map((c) => `${p}.${c}`), t.rows, t.types);
+  }));
+  def("Table.FromValue", fn("Table.FromValue", [{ name: "value" }, { name: "options", optional: true }], (a) => {
+    const v = a[0]!;
+    if (v.kind === "list") return table(["Value"], v.items.map((x) => [x]));
+    if (v.kind === "table") return v;
+    return table(["Value"], [[v]]);
+  }));
+  def("Table.ExpandRecordColumn", fn("Table.ExpandRecordColumn", [{ name: "table" }, { name: "column" }, { name: "fieldNames" }, { name: "newColumnNames", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.ExpandRecordColumn");
+    const ci = colIndex(t, textOf(a[1]!, "expand column"));
+    const fields = namesOf(a[2]!, "field name");
+    const outNames = a[3] ? namesOf(a[3], "new column name") : fields;
+    const columns = [...t.columns.slice(0, ci), ...outNames, ...t.columns.slice(ci + 1)];
+    const rows = t.rows.map((r) => {
+      const cell = r[ci] ?? NULL;
+      const vals = fields.map((f) => (cell.kind === "record" ? cell.fields.get(f) ?? NULL : NULL));
+      return [...r.slice(0, ci), ...vals, ...r.slice(ci + 1)];
+    });
+    return table(columns, rows);
+  }));
+  def("Table.Join", fn("Table.Join", [{ name: "table1" }, { name: "key1" }, { name: "table2" }, { name: "key2" }, { name: "joinKind", optional: true }, { name: "joinAlgorithm", optional: true }], (a) => {
+    const t1 = asTable(a[0]!, "Table.Join");
+    const t2 = asTable(a[2]!, "Table.Join");
+    const k1 = namesOf(a[1]!, "join key").map((c) => colIndex(t1, c));
+    const k2 = namesOf(a[3]!, "join key").map((c) => colIndex(t2, c));
+    const kind = a[4] && a[4].kind === "number" ? a[4].value : 0; // Inner default
+    const byKey = new Map<string, number[]>();
+    for (let j = 0; j < t2.rows.length; j++) {
+      const k = JSON.stringify(k2.map((c) => keyOf(t2.rows[j]![c] ?? NULL)));
+      (byKey.get(k) ?? byKey.set(k, []).get(k)!).push(j);
+    }
+    const columns = [...t1.columns, ...t2.columns];
+    const rows: MValue[][] = [];
+    const matchedT2 = new Set<number>();
+    for (let i = 0; i < t1.rows.length; i++) {
+      const matches = byKey.get(JSON.stringify(k1.map((c) => keyOf(t1.rows[i]![c] ?? NULL)))) ?? [];
+      matches.forEach((j) => matchedT2.add(j));
+      if (kind === 4 && matches.length === 0) rows.push([...t1.rows[i]!, ...t2.columns.map(() => NULL)]); // LeftAnti
+      else if (kind === 4) continue;
+      else if (matches.length === 0 && (kind === 1 || kind === 3)) rows.push([...t1.rows[i]!, ...t2.columns.map(() => NULL)]); // Left/Full outer, no match
+      else for (const j of matches) rows.push([...t1.rows[i]!, ...t2.rows[j]!]);
+    }
+    if (kind === 2 || kind === 3) for (let j = 0; j < t2.rows.length; j++) if (!matchedT2.has(j)) rows.push([...t1.columns.map(() => NULL), ...t2.rows[j]!]); // Right/Full outer
+    return table(columns, rows);
+  }));
   def("Table.HasColumns", fn("Table.HasColumns", [{ name: "table" }, { name: "columns" }], (a) => {
     const t = asTable(a[0]!, "Table.HasColumns");
     return logical(namesOf(a[1]!, "column").every((c) => t.columns.includes(c)));

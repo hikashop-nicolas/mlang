@@ -20,6 +20,13 @@ export function registerConstants(env: Env): void {
   def("JoinKind.RightAnti", N(5));
   def("GroupKind.Local", N(0));
   def("GroupKind.Global", N(1));
+  def("JoinAlgorithm.Dynamic", N(0));
+  def("JoinAlgorithm.PairwiseHash", N(1));
+  def("JoinAlgorithm.SortMerge", N(2));
+  def("JoinAlgorithm.LeftHash", N(3));
+  def("JoinAlgorithm.RightHash", N(4));
+  def("JoinAlgorithm.LeftIndex", N(5));
+  def("JoinAlgorithm.RightIndex", N(6));
   def("Occurrence.First", N(0));
   def("Occurrence.Last", N(1));
   def("Occurrence.All", N(2));

@@ -106,4 +106,24 @@ export function registerList(env: Env): void {
     for (const v of listOf(a[0]!, "List.Accumulate")) acc = callFn(a[2]!, [acc, v]);
     return acc;
   }));
+
+  // List.Combine: concatenate a list of lists into one (one level of flattening).
+  def("List.Combine", fn("List.Combine", [{ name: "lists" }], (a) => {
+    const out: MValue[] = [];
+    for (const inner of listOf(a[0]!, "List.Combine")) out.push(...listOf(inner, "List.Combine"));
+    return list(out);
+  }));
+  // List.Buffer: eager materialization; our lists are already eager, so it's identity.
+  def("List.Buffer", fn("List.Buffer", [{ name: "list" }], (a) => list([...listOf(a[0]!, "List.Buffer")])));
+  def("List.Median", numericFold("List.Median", (ns) => {
+    const s = [...ns].sort((x, y) => x - y);
+    const mid = s.length >> 1;
+    return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+  }));
+  // Sample standard deviation (n-1 denominator, as the reference).
+  def("List.StandardDeviation", numericFold("List.StandardDeviation", (ns) => {
+    if (ns.length < 2) return 0;
+    const mean = ns.reduce((s, x) => s + x, 0) / ns.length;
+    return Math.sqrt(ns.reduce((s, x) => s + (x - mean) ** 2, 0) / (ns.length - 1));
+  }));
 }
