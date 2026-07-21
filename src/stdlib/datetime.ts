@@ -4,10 +4,32 @@
 import type { Env } from "../interpret.js";
 import { NULL, date, datetime, duration, err, number, text, time, type MValue } from "../values.js";
 import { END_OF_DAY_SECS, addMonths, civilFromDays, dateTimeToSerial, dayOfWeekSunday0, daysFromCivil, daysInMonth, parseDateTimeText, parseDateText, serialToDateTime, usDate, usDateTime, usTimeShort } from "../temporal.js";
+import { cultureOf, parseDateCulture } from "../culture.js";
 import { fn, numOf } from "./helpers.js";
+import { formatCustom, standardDateTimePattern } from "../format.js";
 
 type DateV = Extract<MValue, { kind: "date" }>;
 type DateTimeV = Extract<MValue, { kind: "datetime" }>;
+
+/** A ToText format argument: text, an options record with a Format field, or absent. */
+function formatArg(v: MValue | undefined): string | null {
+  if (!v || v.kind === "null") return null;
+  if (v.kind === "text") return v.value;
+  if (v.kind === "record") {
+    const f = v.fields.get("Format");
+    return f && f.kind === "text" ? f.value : null;
+  }
+  err("Expression.Error", "ToText: unsupported format argument.");
+}
+
+function applyDateTimeFormat(fmt: string, parts: { y: number; mo: number; d: number; secs: number }, has: { date: boolean; time: boolean }): string {
+  const pattern = fmt.length === 1 ? standardDateTimePattern(fmt) : null;
+  try {
+    return formatCustom(pattern ?? fmt, parts, has);
+  } catch (e) {
+    err("Expression.Error", (e as Error).message);
+  }
+}
 
 const nn = (name: string, params: { name: string; optional?: boolean }[], f: (args: MValue[]) => MValue) =>
   fn(name, params, (a) => (a[0] && a[0].kind === "null" ? NULL : f(a)));
@@ -60,7 +82,11 @@ export function registerDateTime(env: Env): void {
       return date(s.y, s.m, s.d);
     }
     if (v.kind === "text") {
-      const p = parseDateText(v.value.trim()) ?? (parseDateTimeText(v.value.trim()) as { y: number; m: number; d: number } | null);
+      const s = v.value.trim();
+      const culture = cultureOf(a[1] && a[1].kind === "text" ? a[1].value : null);
+      // Culture order first (it disambiguates D/M/Y slash dates), then ISO / datetime forms
+      // which parseDateCulture rejects (a 4-digit leading field fails its month check).
+      const p = parseDateCulture(s, culture) ?? parseDateText(s) ?? (parseDateTimeText(s) as { y: number; m: number; d: number } | null);
       if (!p) err("Expression.Error", `Date.From: cannot convert "${v.value}" to a date.`);
       return date(p.y, p.m, p.d);
     }
@@ -88,8 +114,9 @@ export function registerDateTime(env: Env): void {
   def("Date.EndOfYear", nn("Date.EndOfYear", [{ name: "date" }], (a) => keepKind(a[0]!, (d) => ({ y: d.y, m: 12, d: 31 }), false)));
   def("Date.IsInCurrentMonth", nn("Date.IsInCurrentMonth", [{ name: "date" }], () => err("Expression.Error", "mlang: clock-dependent Date functions are not supported (deterministic engine).")));
   def("Date.ToText", nn("Date.ToText", [{ name: "date" }, { name: "format", optional: true }, { name: "culture", optional: true }], (a) => {
-    if (a[1] && a[1].kind !== "null") err("Expression.Error", "Date.ToText: format strings are not supported yet.");
     const d = asDateish(a[0]!, "Date.ToText");
+    const f = formatArg(a[1]);
+    if (f !== null) return text(applyDateTimeFormat(f, { y: d.y, mo: d.m, d: d.d, secs: d.secs }, { date: true, time: false }));
     return text(usDate(d.y, d.m, d.d));
   }));
 
@@ -113,10 +140,11 @@ export function registerDateTime(env: Env): void {
   def("Time.Hour", timePart("Time.Hour", (s) => Math.floor(s / 3600)));
   def("Time.Minute", timePart("Time.Minute", (s) => Math.floor((s % 3600) / 60)));
   def("Time.Second", timePart("Time.Second", (s) => s % 60));
-  def("Time.ToText", nn("Time.ToText", [{ name: "time" }, { name: "format", optional: true }], (a) => {
-    if (a[1] && a[1].kind !== "null") err("Expression.Error", "Time.ToText: format strings are not supported yet.");
+  def("Time.ToText", nn("Time.ToText", [{ name: "time" }, { name: "format", optional: true }, { name: "culture", optional: true }], (a) => {
     const v = a[0]!;
     if (v.kind !== "time") err("Expression.Error", "Time.ToText: expected a time.");
+    const f = formatArg(a[1]);
+    if (f !== null) return text(applyDateTimeFormat(f, { y: 1, mo: 1, d: 1, secs: v.secs }, { date: false, time: true }));
     return text(usTimeShort(v.secs));
   }));
 
@@ -147,9 +175,10 @@ export function registerDateTime(env: Env): void {
     return time(v.secs);
   }));
   def("DateTime.ToText", nn("DateTime.ToText", [{ name: "dateTime" }, { name: "format", optional: true }, { name: "culture", optional: true }], (a) => {
-    if (a[1] && a[1].kind !== "null") err("Expression.Error", "DateTime.ToText: format strings are not supported yet.");
     const v = a[0]!;
     if (v.kind !== "datetime") err("Expression.Error", "DateTime.ToText: expected a datetime.");
+    const f = formatArg(a[1]);
+    if (f !== null) return text(applyDateTimeFormat(f, { y: v.y, mo: v.m, d: v.d, secs: v.secs }, { date: true, time: true }));
     return text(usDateTime(v.y, v.m, v.d, v.secs));
   }));
   def("DateTime.LocalNow", fn("DateTime.LocalNow", [], () => err("Expression.Error", "mlang: DateTime.LocalNow is not supported (deterministic engine).")));

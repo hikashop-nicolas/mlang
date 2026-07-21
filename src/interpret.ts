@@ -474,6 +474,7 @@ function matchesPrimitive(v: MValue, t: string): boolean {
     case "time": return v.kind === "time";
     case "datetime": return v.kind === "datetime";
     case "duration": return v.kind === "duration";
+    case "binary": return v.kind === "binary";
     default: return false;
   }
 }

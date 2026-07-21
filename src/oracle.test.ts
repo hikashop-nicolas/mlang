@@ -59,6 +59,12 @@ function parseValue(p: P): unknown {
     const [d, h, mi, s] = parseNumArgs(p, 4);
     return `#duration(${d! * 86400 + h! * 3600 + mi! * 60 + s!})`;
   }
+  if (lit(p, "#binary")) {
+    expectLit(p, "(");
+    const b64 = parseText(p);
+    expectLit(p, ")");
+    return `#binary(${b64})`;
+  }
   if (lit(p, "#infinity")) return Infinity;
   if (lit(p, "-#infinity")) return -Infinity;
   if (lit(p, "#nan")) return NaN;

@@ -1,6 +1,7 @@
 // Value conversions shared by Text.From / Number.From / Table.TransformColumnTypes.
 import { NULL, date, datetime, err, logical, number, text, time, type MValue } from "../values.js";
 import { dateTimeToSerial, parseDateTimeText, parseDateText, serialToDateTime, usDate, usDateTime, usTimeShort } from "../temporal.js";
+import { cultureOf, parseNumberCulture, type Culture } from "../culture.js";
 
 export const numToText = (n: number): string => {
   if (n === Infinity) return "Infinity";
@@ -22,7 +23,7 @@ export function textFrom(v: MValue): string {
   }
 }
 
-export function numberFrom(v: MValue): MValue {
+export function numberFrom(v: MValue, culture?: Culture): MValue {
   if (v.kind === "null") return NULL;
   if (v.kind === "number") return v;
   if (v.kind === "logical") return number(v.value ? 1 : 0);
@@ -32,7 +33,7 @@ export function numberFrom(v: MValue): MValue {
   if (v.kind === "duration") return number(v.secs / 86400); // total days
   if (v.kind === "text") {
     const t = v.value.trim();
-    const n = Number(t.replace(/,/g, "")); // FIDELITY: culture-aware parsing later
+    const n = parseNumberCulture(t, culture ?? cultureOf(null));
     if (t === "" || Number.isNaN(n)) err("Expression.Error", `Number.From: cannot convert "${v.value}" to a number.`);
     return number(n);
   }

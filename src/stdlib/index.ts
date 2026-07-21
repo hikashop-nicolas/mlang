@@ -11,6 +11,7 @@ import { registerNumber } from "./number.js";
 import { registerRecord } from "./record.js";
 import { registerDateTime } from "./datetime.js";
 import { registerDocument } from "./document.js";
+import { registerBinary } from "./binary.js";
 
 export function registerStdlib(env: Env): void {
   registerConstants(env);
@@ -21,6 +22,7 @@ export function registerStdlib(env: Env): void {
   registerRecord(env);
   registerDateTime(env);
   registerDocument(env);
+  registerBinary(env);
 
   // Error.Record: the constructor used by `error Error.Record(...)`.
   env.defineValue("Error.Record", fn("Error.Record", [{ name: "reason" }, { name: "message", optional: true }, { name: "detail", optional: true }], (a) => {

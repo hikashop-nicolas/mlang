@@ -3,6 +3,7 @@
 import type { Env } from "../interpret.js";
 import { NULL, err, number, type MValue } from "../values.js";
 import { fn, numOf } from "./helpers.js";
+import { formatNumber } from "../format.js";
 
 const nn = (name: string, params: { name: string; optional?: boolean }[], f: (args: MValue[]) => MValue) =>
   fn(name, params, (a) => (a[0] && a[0].kind === "null" ? NULL : f(a)));
@@ -63,7 +64,14 @@ export function registerNumber(env: Env): void {
 
   def("Number.IsNaN", fn("Number.IsNaN", [{ name: "number" }], (a) => ({ kind: "logical", value: a[0]!.kind === "number" && Number.isNaN(a[0]!.value) })));
   def("Number.ToText", nn("Number.ToText", [{ name: "number" }, { name: "format", optional: true }, { name: "culture", optional: true }], (a) => {
-    if (a[1] && a[1].kind !== "null") err("Expression.Error", "Number.ToText: format strings are not supported yet.");
-    return { kind: "text", value: String(numOf(a[0]!, "Number.ToText")) };
+    const v = numOf(a[0]!, "Number.ToText");
+    const f = a[1];
+    if (!f || f.kind === "null") return { kind: "text", value: String(v) };
+    if (f.kind !== "text") err("Expression.Error", "Number.ToText: format must be text.");
+    try {
+      return { kind: "text", value: formatNumber(v, f.value) };
+    } catch (e) {
+      err("Expression.Error", (e as Error).message);
+    }
   }));
 }

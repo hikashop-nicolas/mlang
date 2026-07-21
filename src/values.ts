@@ -11,6 +11,7 @@ export type MValue =
   | { kind: "time"; secs: number } // seconds since midnight (fractional)
   | { kind: "datetime"; y: number; m: number; d: number; secs: number }
   | { kind: "duration"; secs: number } // fractional seconds, may be negative
+  | { kind: "binary"; bytes: Uint8Array }
   | { kind: "list"; items: MValue[] }
   | { kind: "record"; fields: Map<string, MValue> } // insertion-ordered
   | { kind: "table"; columns: string[]; rows: MValue[][]; types?: Map<string, string> }
@@ -54,6 +55,7 @@ export const date = (y: number, m: number, d: number): MValue => ({ kind: "date"
 export const time = (secs: number): MValue => ({ kind: "time", secs });
 export const datetime = (y: number, m: number, d: number, secs: number): MValue => ({ kind: "datetime", y, m, d, secs });
 export const duration = (secs: number): MValue => ({ kind: "duration", secs });
+export const binary = (bytes: Uint8Array): MValue => ({ kind: "binary", bytes });
 export const record = (entries: [string, MValue][]): MValue => ({ kind: "record", fields: new Map(entries) });
 export const table = (columns: string[], rows: MValue[][], types?: Map<string, string>): MValue => ({ kind: "table", columns, rows, types });
 
@@ -93,6 +95,10 @@ export function equals(a: MValue, b: MValue): boolean {
     }
     case "time": return a.secs === (b as typeof a).secs;
     case "duration": return a.secs === (b as typeof a).secs;
+    case "binary": {
+      const bb = (b as typeof a).bytes;
+      return a.bytes.length === bb.length && a.bytes.every((x, i) => x === bb[i]);
+    }
     case "list": {
       const bl = b as typeof a;
       return a.items.length === bl.items.length && a.items.every((x, i) => equals(x, bl.items[i]!));
@@ -149,6 +155,7 @@ export function toJS(v: MValue): unknown {
     case "time": return `#time(${v.secs})`;
     case "datetime": return `#datetime(${v.y},${v.m},${v.d},${v.secs})`;
     case "duration": return `#duration(${v.secs})`;
+    case "binary": return `#binary(${btoa(String.fromCharCode(...v.bytes))})`;
     case "list": return v.items.map(toJS);
     case "record": return Object.fromEntries([...v.fields].map(([k, x]) => [k, toJS(x)]));
     case "table": return { columns: v.columns, rows: v.rows.map((r) => r.map(toJS)) };

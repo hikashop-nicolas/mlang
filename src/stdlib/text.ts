@@ -3,6 +3,7 @@ import type { Env } from "../interpret.js";
 import { NULL, err, list, logical, number, text, type MValue } from "../values.js";
 import { fn, listOf, numOf, textOf } from "./helpers.js";
 import { numberFrom, textFrom } from "./convert.js";
+import { cultureOf } from "../culture.js";
 
 /** null-in null-out wrapper for the many Text functions that propagate null. */
 const nn = (name: string, params: { name: string; optional?: boolean }[], f: (args: MValue[]) => MValue) =>
@@ -13,7 +14,7 @@ export function registerText(env: Env): void {
 
   def("Text.From", fn("Text.From", [{ name: "value" }, { name: "culture", optional: true }], (a) =>
     a[0]!.kind === "null" ? NULL : text(textFrom(a[0]!))));
-  def("Number.From", fn("Number.From", [{ name: "value" }, { name: "culture", optional: true }], (a) => numberFrom(a[0]!)));
+  def("Number.From", fn("Number.From", [{ name: "value" }, { name: "culture", optional: true }], (a) => numberFrom(a[0]!, cultureOf(a[1] && a[1].kind === "text" ? a[1].value : null))));
 
   def("Text.Length", nn("Text.Length", [{ name: "text" }], (a) => number([...textOf(a[0]!, "Text.Length")].length)));
   def("Text.Upper", nn("Text.Upper", [{ name: "text" }], (a) => text(textOf(a[0]!, "Text.Upper").toUpperCase())));

@@ -56,10 +56,18 @@ function splitCsvRecords(s: string): string[] {
 export function registerDocument(env: Env): void {
   const def = (name: string, v: MValue): void => env.defineValue(name, v);
 
-  // Csv.Document(source, optional columns/options) -> a table. Tier-1 accepts text source,
-  // a Delimiter option, and either a column count or a list of names; other options raise.
+  // A source is text or a binary (decoded as UTF-8) - the latter is what a host connector
+  // like File.Contents returns.
+  const sourceText = (v: MValue, who: string): string => {
+    if (v.kind === "text") return v.value;
+    if (v.kind === "binary") return new TextDecoder("utf-8").decode(v.bytes);
+    err("Expression.Error", `${who}: expected a text or binary source.`);
+  };
+
+  // Csv.Document(source, optional columns/options) -> a table. Tier-1 accepts text/binary
+  // source, a Delimiter option, and either a column count or a list of names; other raise.
   def("Csv.Document", fn("Csv.Document", [{ name: "source" }, { name: "columns", optional: true }], (a) => {
-    if (a[0]!.kind !== "text") err("Expression.Error", "Csv.Document: only in-memory text sources are supported.");
+    const srcText = sourceText(a[0]!, "Csv.Document");
     let delim = ",";
     let colSpec: MValue | undefined;
     const opt = a[1];
@@ -73,7 +81,7 @@ export function registerDocument(env: Env): void {
         colSpec = opt;
       } else err("Expression.Error", "Csv.Document: unsupported second argument.");
     }
-    const records = splitCsvRecords((a[0] as { value: string }).value).map((r) => parseCsvLine(r, delim).map(text) as MValue[]);
+    const records = splitCsvRecords(srcText).map((r) => parseCsvLine(r, delim).map(text) as MValue[]);
     let width = records.reduce((w, r) => Math.max(w, r.length), 0);
     let columns: string[];
     if (colSpec && colSpec.kind === "list") {
@@ -92,10 +100,10 @@ export function registerDocument(env: Env): void {
 
   // Json.Document(text) -> M value tree (records/lists/text/number/logical/null).
   def("Json.Document", fn("Json.Document", [{ name: "jsonText" }, { name: "encoding", optional: true }], (a) => {
-    if (a[0]!.kind !== "text") err("Expression.Error", "Json.Document: only in-memory text is supported.");
+    const src = sourceText(a[0]!, "Json.Document");
     let parsed: unknown;
     try {
-      parsed = JSON.parse((a[0] as { value: string }).value);
+      parsed = JSON.parse(src);
     } catch (e) {
       err("Expression.Error", `Json.Document: invalid JSON (${(e as Error).message}).`);
     }
