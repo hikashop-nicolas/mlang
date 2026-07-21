@@ -12,6 +12,7 @@ import { MError, type MValue } from "./values.js";
 
 export { MError, toJS, type MValue } from "./values.js";
 export { decodeIdentifier, decodeTextLiteral } from "./interpret.js";
+export { CONNECTOR_MISSING, isMissingConnector, missingConnectorName } from "./stdlib/connectors.js";
 
 /** Values (usually connector functions like Excel.CurrentWorkbook) injected by the host. */
 export type HostBindings = Record<string, MValue>;
