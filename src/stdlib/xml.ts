@@ -1,6 +1,6 @@
 // Xml.Document / Xml.Tables / Html.Table - pure parsers over in-memory text or binary.
 import type { Env } from "../interpret.js";
-import { NULL, err, list, table, text, type MValue } from "../values.js";
+import { NULL, err, table, text, type MValue } from "../values.js";
 import { fn, textOf } from "./helpers.js";
 import { findAll, innerText, parseXml, type XmlNode } from "../xml.js";
 
@@ -34,12 +34,13 @@ export function registerXml(env: Env): void {
     return xmlTable(root.children);
   }));
 
-  // Xml.Tables: every element that repeats as a sibling becomes a table of its children's
-  // leaf values. Tier-1 targets the common "list of records" XML (repeated <row>/<item>).
+  // Xml.Tables: a table [Name, Table] with one row per repeated-element group (the nested
+  // Table holds that element's instances). Shape oracle-confirmed. Tier-1 targets the common
+  // "list of records" XML (repeated <row>/<item>).
   def("Xml.Tables", fn("Xml.Tables", [{ name: "contents" }, { name: "options", optional: true }], (a) => {
     const root = parseXml(sourceText(a[0]!, "Xml.Tables"));
     const groups = repeatedGroups(root);
-    return list(groups.map((g) => recordsToTable(g)));
+    return table(["Name", "Table"], groups.map((g) => [text(g[0]!.name), recordsToTable(g)]));
   }));
 
   // Html.Table(html, columnNameSelectorPairs, options): rowSelector defaults to table rows.

@@ -7,16 +7,17 @@ type T = { columns: string[]; rows: unknown[][] };
 describe("Xml.Tables", () => {
   it("turns a repeated element into a table of its children", async () => {
     const xml = `<data><row><n>a</n><v>1</v></row><row><n>b</n><v>2</v></row></data>`;
-    const tables = (await js(`Xml.Tables("${xml}")`)) as T[];
-    expect(tables.length).toBeGreaterThanOrEqual(1);
-    const t = tables[0]!;
+    const nav = (await js(`Xml.Tables("${xml}")`)) as T;
+    expect(nav.columns).toEqual(["Name", "Table"]);
+    expect(nav.rows[0]![0]).toBe("row");
+    const t = nav.rows[0]![1] as T;
     expect(t.columns).toEqual(["n", "v"]);
     expect(t.rows).toEqual([["a", "1"], ["b", "2"]]);
   });
 
   it("handles entities and missing children", async () => {
     const xml = `<r><i><a>x &amp; y</a></i><i><a>z</a><b>2</b></i></r>`;
-    const t = ((await js(`Xml.Tables("${xml}")`)) as T[])[0]!;
+    const t = ((await js(`Xml.Tables("${xml}")`)) as T).rows[0]![1] as T;
     expect(t.columns).toEqual(["a", "b"]);
     expect(t.rows).toEqual([["x & y", null], ["z", "2"]]);
   });
