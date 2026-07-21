@@ -1,0 +1,1 @@
+[ A = #duration(30, 0, 0, 0), B = #date(2021, 1, 2), C = #duration(0, 1, 30, 0), D = #datetime(2021, 3, 1, 6, 30, 0), E = #time(1, 0, 0), F = true, G = #duration(0, 2, 30, 0), H = 2 ] 

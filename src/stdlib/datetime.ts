@@ -3,7 +3,7 @@
 // arithmetic edge cases are oracle-pinned.
 import type { Env } from "../interpret.js";
 import { NULL, date, datetime, duration, err, number, text, time, type MValue } from "../values.js";
-import { addMonths, civilFromDays, dateTimeToSerial, dayOfWeekSunday0, daysFromCivil, daysInMonth, formatDate, formatTimeOfDay, parseDateTimeText, parseDateText, serialToDateTime } from "../temporal.js";
+import { END_OF_DAY_SECS, addMonths, civilFromDays, dateTimeToSerial, dayOfWeekSunday0, daysFromCivil, daysInMonth, parseDateTimeText, parseDateText, serialToDateTime, usDate, usDateTime, usTimeShort } from "../temporal.js";
 import { fn, numOf } from "./helpers.js";
 
 type DateV = Extract<MValue, { kind: "date" }>;
@@ -90,7 +90,7 @@ export function registerDateTime(env: Env): void {
   def("Date.ToText", nn("Date.ToText", [{ name: "date" }, { name: "format", optional: true }, { name: "culture", optional: true }], (a) => {
     if (a[1] && a[1].kind !== "null") err("Expression.Error", "Date.ToText: format strings are not supported yet.");
     const d = asDateish(a[0]!, "Date.ToText");
-    return text(formatDate(d.y, d.m, d.d));
+    return text(usDate(d.y, d.m, d.d));
   }));
 
   // --- Time.* ------------------------------------------------------------------
@@ -117,7 +117,7 @@ export function registerDateTime(env: Env): void {
     if (a[1] && a[1].kind !== "null") err("Expression.Error", "Time.ToText: format strings are not supported yet.");
     const v = a[0]!;
     if (v.kind !== "time") err("Expression.Error", "Time.ToText: expected a time.");
-    return text(formatTimeOfDay(v.secs));
+    return text(usTimeShort(v.secs));
   }));
 
   // --- DateTime.* -----------------------------------------------------------------
@@ -150,7 +150,7 @@ export function registerDateTime(env: Env): void {
     if (a[1] && a[1].kind !== "null") err("Expression.Error", "DateTime.ToText: format strings are not supported yet.");
     const v = a[0]!;
     if (v.kind !== "datetime") err("Expression.Error", "DateTime.ToText: expected a datetime.");
-    return text(`${formatDate(v.y, v.m, v.d)} ${formatTimeOfDay(v.secs)}`);
+    return text(usDateTime(v.y, v.m, v.d, v.secs));
   }));
   def("DateTime.LocalNow", fn("DateTime.LocalNow", [], () => err("Expression.Error", "mlang: DateTime.LocalNow is not supported (deterministic engine).")));
   def("DateTime.FixedLocalNow", fn("DateTime.FixedLocalNow", [], () => err("Expression.Error", "mlang: DateTime.FixedLocalNow is not supported (deterministic engine).")));
@@ -198,15 +198,16 @@ function shift(v: MValue, days: number, months: number, years: number): MValue {
   return src.kind === "date" ? date(y, m, d) : datetime(y, m, d, (src as DateTimeV).secs);
 }
 
-/** Start/End helpers keep the input kind; datetimes get 00:00:00 at starts, keep time at ends? (oracle) */
-function keepKind(v: MValue, f: (d: { y: number; m: number; d: number }) => { y: number; m: number; d: number }, zeroTime: boolean): MValue {
+/** Start/End helpers keep the input kind. For datetimes, StartOf* zeroes the time and
+    EndOf* moves to the last instant of the day (23:59:59.9999999) - oracle-confirmed. */
+function keepKind(v: MValue, f: (d: { y: number; m: number; d: number }) => { y: number; m: number; d: number }, isStart: boolean): MValue {
   if (v.kind === "date") {
     const r = f(v);
     return date(r.y, r.m, r.d);
   }
   if (v.kind === "datetime") {
     const r = f(v);
-    return datetime(r.y, r.m, r.d, zeroTime ? 0 : v.secs);
+    return datetime(r.y, r.m, r.d, isStart ? 0 : END_OF_DAY_SECS);
   }
   err("Expression.Error", "Expected a date or datetime.");
 }

@@ -66,7 +66,11 @@ describe("temporal values and operators", () => {
   it("conversions: TransformColumnTypes to date, Text.From, Number.From", async () => {
     const out = (await js(`Table.TransformColumnTypes(#table({"D"}, {{44197}, {"2021-03-01"}}), {{"D", type date}})`)) as { rows: unknown[][] };
     expect(out.rows.map((r) => r[0])).toEqual(["#date(2021,1,1)", "#date(2021,3,1)"]);
-    expect(await js("Text.From(#date(2021, 1, 31))")).toBe("2021-01-31");
+    expect(await js("Text.From(#date(2021, 1, 31))")).toBe("1/31/2021"); // en-US default
+    expect(await js("Date.ToText(#date(2021, 1, 31))")).toBe("1/31/2021");
+    expect(await js("Time.ToText(#time(6, 5, 4))")).toBe("6:05 AM"); // short time, no seconds
+    expect(await js("DateTime.ToText(#datetime(2021, 1, 31, 13, 5, 4))")).toBe("1/31/2021 1:05:04 PM");
+    expect(await js("Date.EndOfMonth(#datetime(2021, 2, 5, 6, 30, 0))")).toBe(`#datetime(2021,2,28,${86399.9999999})`);
     expect(await js("Number.From(#date(2021, 1, 1))")).toBe(44197);
     expect(await js("Number.From(#duration(1, 12, 0, 0))")).toBe(1.5);
   });

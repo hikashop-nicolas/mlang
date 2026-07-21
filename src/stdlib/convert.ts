@@ -1,6 +1,6 @@
 // Value conversions shared by Text.From / Number.From / Table.TransformColumnTypes.
 import { NULL, date, datetime, err, logical, number, text, time, type MValue } from "../values.js";
-import { dateTimeToSerial, formatDate, formatTimeOfDay, parseDateTimeText, parseDateText, serialToDateTime } from "../temporal.js";
+import { dateTimeToSerial, parseDateTimeText, parseDateText, serialToDateTime, usDate, usDateTime, usTimeShort } from "../temporal.js";
 
 export const numToText = (n: number): string => {
   if (n === Infinity) return "Infinity";
@@ -14,9 +14,9 @@ export function textFrom(v: MValue): string {
     case "text": return v.value;
     case "number": return numToText(v.value);
     case "logical": return v.value ? "true" : "false";
-    case "date": return formatDate(v.y, v.m, v.d);
-    case "time": return formatTimeOfDay(v.secs);
-    case "datetime": return `${formatDate(v.y, v.m, v.d)} ${formatTimeOfDay(v.secs)}`;
+    case "date": return usDate(v.y, v.m, v.d);
+    case "time": return usTimeShort(v.secs);
+    case "datetime": return usDateTime(v.y, v.m, v.d, v.secs);
     default:
       err("Expression.Error", `Cannot convert a ${v.kind} to text.`);
   }

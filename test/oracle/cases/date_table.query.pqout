@@ -1,0 +1,1 @@
+#table( type table [D = date, V = any, Y = any] , {{#date(2021, 1, 1), 1, 2021} , {#date(2021, 3, 1), 2, 2021} } ) 

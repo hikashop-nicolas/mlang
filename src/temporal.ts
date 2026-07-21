@@ -58,6 +58,10 @@ export function dateTimeToSerial(y: number, m: number, d: number, secs: number):
 
 const p2 = (n: number): string => String(n).padStart(2, "0");
 
+/** Last instant of a civil day: 23:59:59.9999999 (matches the engine's EndOf* results). */
+export const END_OF_DAY_SECS = 86399.9999999;
+
+/** ISO date, used internally where a stable format is wanted (not the culture ToText). */
 export const formatDate = (y: number, m: number, d: number): string => `${String(y).padStart(4, "0")}-${p2(m)}-${p2(d)}`;
 
 export function formatTimeOfDay(secs: number): string {
@@ -69,6 +73,26 @@ export function formatTimeOfDay(secs: number): string {
   const fracStr = frac > 1e-9 ? String(Math.round(frac * 1e7) / 1e7).slice(1) : "";
   return `${p2(h)}:${p2(mi)}:${p2(sInt)}${fracStr}`;
 }
+
+// en-US default ("General") formats, which the engine uses for X.ToText / Text.From with no
+// format argument (oracle-confirmed).
+export const usDate = (y: number, m: number, d: number): string => `${m}/${d}/${String(y).padStart(4, "0")}`;
+
+const twelveHour = (secs: number): { h: number; mi: number; s: number; ap: string } => {
+  const h24 = Math.floor(secs / 3600);
+  return { h: h24 % 12 === 0 ? 12 : h24 % 12, mi: Math.floor((secs % 3600) / 60), s: Math.floor(secs % 60), ap: h24 < 12 ? "AM" : "PM" };
+};
+/** Short time "h:mm tt" (no seconds), as Time.ToText / Text.From(time). */
+export const usTimeShort = (secs: number): string => {
+  const t = twelveHour(secs);
+  return `${t.h}:${p2(t.mi)} ${t.ap}`;
+};
+/** Long time "h:mm:ss tt", used in the datetime General format. */
+export const usTimeLong = (secs: number): string => {
+  const t = twelveHour(secs);
+  return `${t.h}:${p2(t.mi)}:${p2(t.s)} ${t.ap}`;
+};
+export const usDateTime = (y: number, m: number, d: number, secs: number): string => `${usDate(y, m, d)} ${usTimeLong(secs)}`;
 
 /** Parse "YYYY-MM-DD" (ISO) or "M/D/YYYY" (en-US default culture). Null if unparsable. */
 export function parseDateText(s: string): { y: number; m: number; d: number } | null {
