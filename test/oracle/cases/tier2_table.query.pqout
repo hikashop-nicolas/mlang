@@ -1,0 +1,1 @@
+[ Num = #table( type table [Column1 = any, Column2 = any] , {{1, "a"} , {2, "b"} } ) , Dates = {#date(2018, 1, 1), #date(2018, 1, 2), #date(2018, 1, 3)} , DoW = "Monday", Mon = "March", Int64 = #table( type table [N = number] , {{42} } ) , Nothing = #table( type table [Column1 = any] , {{"a"} , {"b"} } ) , Meta = 1 ] 
