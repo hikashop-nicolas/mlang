@@ -1,0 +1,1 @@
+#table( type table [Name = text, Kind = text, Hidden = logical] , {{"Sales", "Sheet", false} } ) 

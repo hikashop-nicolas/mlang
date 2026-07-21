@@ -1,0 +1,1 @@
+#table( type table [Product = text, Qty = number] , {{"Apples", 10} } ) 
