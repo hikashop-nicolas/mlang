@@ -1,0 +1,54 @@
+# Oracle fixtures via Microsoft's PQTest CLI (Microsoft.PowerQuery.SdkTools NuGet).
+# Clean-room policy: PQTest is driven BLACK-BOX on a CI runner to observe input/output
+# only - never shipped, never bundled, never decompiled. The produced .pqout files are
+# downloaded and committed as fixtures so the normal test suite needs no Microsoft tooling.
+# Windows runner: the Mashup engine binaries are win-only.
+name: Oracle (PQTest)
+on:
+  workflow_dispatch:
+  push:
+    paths: ["test/oracle/**", ".github/workflows/oracle.yml"]
+
+jobs:
+  oracle:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Microsoft.PowerQuery.SdkTools
+        shell: pwsh
+        run: |
+          nuget install Microsoft.PowerQuery.SdkTools -ExcludeVersion -OutputDirectory pqtools -NonInteractive
+          $exe = Get-ChildItem -Recurse pqtools -Filter PQTest.exe | Select-Object -First 1
+          if (-not $exe) { Get-ChildItem -Recurse pqtools | Select-Object -ExpandProperty FullName; throw "PQTest.exe not found" }
+          "PQTEST=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Capture PQTest usage (first-run calibration)
+        shell: pwsh
+        run: |
+          & $env:PQTEST --help *> pqtest-help.txt
+          exit 0
+        continue-on-error: true
+
+      - name: Run oracle cases
+        shell: pwsh
+        run: |
+          $cases = Get-ChildItem test/oracle/cases -Filter *.query.pq
+          foreach ($f in $cases) {
+            Write-Host "=== $($f.Name) ==="
+            $log = Join-Path $f.DirectoryName ($f.BaseName + ".log.txt")
+            # compare: evaluates the query; with no existing .pqout it writes one next to
+            # the query file (that output is the fixture we want).
+            & $env:PQTEST compare --queryFile $f.FullName --prettyPrint *> $log
+            Get-Content $log
+          }
+          exit 0
+        continue-on-error: true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oracle-output
+          path: |
+            test/oracle/cases/
+            pqtest-help.txt
+          if-no-files-found: warn
