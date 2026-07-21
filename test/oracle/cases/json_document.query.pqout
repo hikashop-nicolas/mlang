@@ -1,0 +1,1 @@
+[ Obj = [ a = 1, b = {2, 3} , c = null ] , Arr = {true, false} , Scalar = 42, Recs = #table( type table [n = any, v = any] , {{"a", 1} , {"b", 2} } )  ] 

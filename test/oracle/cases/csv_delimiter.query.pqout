@@ -1,0 +1,1 @@
+[ Semi = #table( type table [Column1 = text, Column2 = text, Column3 = text] , {{"a", "b", "c"} } ) , Count = #table( type table [Column1 = text, Column2 = text, Column3 = text] , {{"a", "b", ""} } )  ] 

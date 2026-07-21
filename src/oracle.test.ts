@@ -100,12 +100,30 @@ function parseText(p: P): string {
         continue;
       }
       p.i++;
-      return out;
+      return decodeEscapes(out);
     }
     out += ch;
     p.i++;
   }
   throw new Error("pqout: unterminated text");
+}
+
+/** PQTest serializes control chars in text as M escapes (#(lf)/#(cr)/#(tab)/#(#)/#(hex)). */
+function decodeEscapes(s: string): string {
+  return s.replace(/#\(([^)]*)\)/g, (_, esc: string) =>
+    esc
+      .split(",")
+      .map((e: string) => {
+        const k = e.trim();
+        if (k === "lf") return "\n";
+        if (k === "cr") return "\r";
+        if (k === "tab") return "\t";
+        if (k === "#") return "#";
+        if (/^[0-9A-Fa-f]{4,8}$/.test(k)) return String.fromCodePoint(parseInt(k, 16));
+        return `#(${k})`;
+      })
+      .join(""),
+  );
 }
 
 function parseRecord(p: P): Record<string, unknown> {

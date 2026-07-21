@@ -85,7 +85,8 @@ export function registerDocument(env: Env): void {
     } else {
       columns = Array.from({ length: width }, (_, i) => `Column${i + 1}`);
     }
-    const rows = records.map((r) => Array.from({ length: width }, (_, i) => r[i] ?? NULL));
+    // Csv.Document yields all-text cells; short rows pad with "" (not null) - oracle-checked.
+    const rows = records.map((r) => Array.from({ length: width }, (_, i) => r[i] ?? text("")));
     return table(columns, rows);
   }));
 

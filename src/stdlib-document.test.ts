@@ -25,7 +25,7 @@ describe("Csv.Document", () => {
 
   it("honours a Delimiter option and a Columns count", async () => {
     expect(((await js(`Csv.Document("a;b;c", [Delimiter = ";"])`)) as T).rows).toEqual([["a", "b", "c"]]);
-    expect(((await js(`Csv.Document("a,b", 3)`)) as T).rows).toEqual([["a", "b", null]]);
+    expect(((await js(`Csv.Document("a,b", 3)`)) as T).rows).toEqual([["a", "b", ""]]); // pads with "" (oracle)
     await expect(js(`Csv.Document("a,b", [Unknown = 1])`)).rejects.toThrow(/not supported/);
   });
 

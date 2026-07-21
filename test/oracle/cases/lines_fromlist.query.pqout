@@ -1,0 +1,1 @@
+[ L = {"a", "b"} , FC = #table( type table [N = any, L = any] , {{1, "a"} , {2, "b"} } ) , FL = #table( type table [K = text, V = text] , {{"a", "1"} , {"b", "2"} } )  ] 
