@@ -1,0 +1,1 @@
+#table( type table [Product = any, Quantity = number, Price = number, Total = any] , {{"Cherries", 20, 5, 100} , {"Apples", 10, 2.5, 25} } ) 

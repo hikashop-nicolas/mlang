@@ -183,7 +183,7 @@ export function registerStdlib(env: Env): void {
     if (v.kind === "null") return NULL;
     if (v.kind === "text") return v;
     if (v.kind === "number") return text(numToText(v.value));
-    if (v.kind === "logical") return text(v.value ? "TRUE" : "FALSE");
+    if (v.kind === "logical") return text(v.value ? "true" : "false");
     err("Expression.Error", `Text.From: cannot convert ${v.kind}.`);
   }));
   def("Text.Upper", fn("Text.Upper", [{ name: "text" }], (a) => (a[0]!.kind === "null" ? NULL : text(textOf(a[0]!, "Text.Upper").toUpperCase()))));
@@ -233,7 +233,7 @@ function convertTo(v: MValue, ty: string, col: string): MValue {
   if (v.kind === "null") return NULL;
   switch (ty) {
     case "number": return numberFrom(v);
-    case "text": return v.kind === "text" ? v : v.kind === "number" ? text(numToText(v.value)) : v.kind === "logical" ? text(v.value ? "TRUE" : "FALSE") : err("Expression.Error", `Cannot convert column '${col}' to text.`);
+    case "text": return v.kind === "text" ? v : v.kind === "number" ? text(numToText(v.value)) : v.kind === "logical" ? text(v.value ? "true" : "false") : err("Expression.Error", `Cannot convert column '${col}' to text.`);
     case "logical":
       if (v.kind === "logical") return v;
       if (v.kind === "number") return logical(v.value !== 0);

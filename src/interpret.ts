@@ -187,13 +187,19 @@ export function evalNode(n: Node, env: Env): MValue {
     case "ItemAccessExpression":
       return itemAccess(env.lookup("_"), n, env);
     case "ErrorHandlingExpression": {
+      const handler = n.handler ? asNode(n.handler) : null;
+      const bareTry = !handler || handler.kind !== "OtherwiseExpression";
       try {
-        return evalNode(child(n, "protectedExpression"), env);
+        const v = evalNode(child(n, "protectedExpression"), env);
+        if (!bareTry) return v;
+        // Bare try wraps success too: {HasError = false, Value = v} (spec).
+        const fields = new Map<string, MValue>();
+        fields.set("HasError", logical(false));
+        fields.set("Value", v);
+        return { kind: "record", fields };
       } catch (e) {
         if (!(e instanceof MError)) throw e;
-        const handler = n.handler ? asNode(n.handler) : null;
-        if (handler && handler.kind === "OtherwiseExpression") return evalNode(child(handler, "paired"), env);
-        // Bare try: the spec's record form {HasError, Error/Value}.
+        if (!bareTry) return evalNode(child(handler!, "paired"), env);
         const fields = new Map<string, MValue>();
         fields.set("HasError", logical(true));
         fields.set("Error", e.toRecord());
@@ -388,7 +394,7 @@ function arithmetic(n: Node, env: Env): MValue {
     case "-": return number(a - b);
     case "*": return number(a * b);
     case "/":
-      if (b === 0) err("Expression.Error", "Division by zero", NULL);
+      // IEEE754 like the real engine: 1/0 = #infinity, 0/0 = #nan (oracle-confirmed).
       return number(a / b);
     default:
       err("Expression.Error", `Unsupported operator ${op}`);

@@ -33,18 +33,22 @@ describe("language core", () => {
     expect(await js("null or false")).toBe(null);
   });
 
-  it("errors: division by zero, try/otherwise, bare try record", async () => {
-    await expect(js("1/0")).rejects.toThrow(/Division by zero/);
-    expect(await js("try 1/0 otherwise -1")).toBe(-1);
-    const r = (await js("try 1/0")) as { HasError: boolean; Error: { Message: string } };
-    expect(r.HasError).toBe(true);
-    expect(r.Error.Message).toMatch(/Division by zero/);
+  it("division follows IEEE754 (oracle: 1/0 = #infinity), errors + try/otherwise", async () => {
+    expect(await js("1/0")).toBe(Infinity);
+    expect(await js("try 1/0 otherwise -1")).toBe(Infinity); // no error raised
+    expect(await js("try [A = 1][B] otherwise -1")).toBe(-1);
+    const bad = (await js("try [A = 1][B]")) as { HasError: boolean; Error: { Message: string } };
+    expect(bad.HasError).toBe(true);
+    expect(bad.Error.Message).toMatch(/field 'B'/);
+    const ok = (await js("try 7")) as { HasError: boolean; Value: number };
+    expect(ok.HasError).toBe(false);
+    expect(ok.Value).toBe(7);
   });
 
   it("let is lazy, memoized and order-independent", async () => {
     expect(await js("let a = b + 1, b = 2 in a")).toBe(3);
     // An unused binding that would raise must not be evaluated.
-    expect(await js("let boom = 1/0, ok = 5 in ok")).toBe(5);
+    expect(await js("let boom = [X = 1][Missing], ok = 5 in ok")).toBe(5);
   });
 
   it("records, lists, item and field access", async () => {
