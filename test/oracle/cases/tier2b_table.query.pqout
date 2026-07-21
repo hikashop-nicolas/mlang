@@ -1,0 +1,1 @@
+[ Col = {1, 2} , Ren = #table( type table [a = any, b = any] , {{1, 2} } ) , Pre = #table( type table [T.A = any] , {{1} } ) , FromV = #table( type table [Value = any] , {{10} , {20} } ) , Exp = #table( type table [K = any, a = any, b = any] , {{1, 10, 20} } ) , Joined = #table( type table [K = any, V = any, K2 = any, W = any] , {{1, "a", 1, "x"} , {2, "b", null, null} } )  ] 
