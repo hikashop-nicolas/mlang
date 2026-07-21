@@ -15,6 +15,7 @@ export { MError, toJS, type MValue } from "./values.js";
 export { decodeIdentifier, decodeTextLiteral } from "./interpret.js";
 export { CONNECTOR_MISSING, isMissingConnector, missingConnectorName } from "./stdlib/connectors.js";
 export { asyncConnector } from "./async-runtime.js";
+export { fromJson, tableFromRecords, tableFromJson } from "./host.js";
 
 /** Values (usually connector functions like Excel.CurrentWorkbook) injected by the host. */
 export type HostBindings = Record<string, MValue>;

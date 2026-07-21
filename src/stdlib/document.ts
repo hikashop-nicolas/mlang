@@ -2,8 +2,9 @@
 // entry points that let queries process embedded data. From the public reference; the
 // CSV/JSON option shapes not covered raise precise errors.
 import type { Env } from "../interpret.js";
-import { NULL, err, list, logical, number, table, text, type MFunction, type MValue } from "../values.js";
+import { NULL, err, list, logical, table, text, type MFunction, type MValue } from "../values.js";
 import { fn, listOf, textOf, type Table } from "./helpers.js";
+import { fromJson } from "../host.js";
 
 const asFunc = (v: MValue | undefined, who: string): MFunction => {
   if (!v || v.kind !== "function") err("Expression.Error", `${who}: expected a function.`);
@@ -107,7 +108,7 @@ export function registerDocument(env: Env): void {
     } catch (e) {
       err("Expression.Error", `Json.Document: invalid JSON (${(e as Error).message}).`);
     }
-    return jsonToM(parsed);
+    return fromJson(parsed);
   }));
 
   def("Lines.FromText", fn("Lines.FromText", [{ name: "text" }, { name: "quoteStyle", optional: true }], (a) => {
@@ -194,19 +195,5 @@ function valueMatchesType(v: MValue, ty: string): boolean {
   }
 }
 
-/** JSON -> M value. Objects become records; arrays become lists (Excel then expands them). */
-function jsonToM(v: unknown): MValue {
-  if (v === null) return NULL;
-  if (typeof v === "boolean") return logical(v);
-  if (typeof v === "number") return number(v);
-  if (typeof v === "string") return text(v);
-  if (Array.isArray(v)) return list(v.map(jsonToM));
-  if (typeof v === "object") {
-    const fields = new Map<string, MValue>();
-    for (const [k, val] of Object.entries(v as Record<string, unknown>)) fields.set(k, jsonToM(val));
-    return { kind: "record", fields };
-  }
-  return NULL;
-}
 
 export type { Table };
