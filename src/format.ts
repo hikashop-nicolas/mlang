@@ -88,7 +88,7 @@ export function formatNumber(value: number, fmt: string): string {
     switch (letter) {
       case "N": return groupThousands(fixed(value, prec ?? 2));
       case "F": return fixed(value, prec ?? 2);
-      case "P": return `${groupThousands(fixed(value * 100, prec ?? 2))} %`;
+      case "P": return `${groupThousands(fixed(value * 100, prec ?? 2))}%`; // no space (oracle)
       case "C": return `$${groupThousands(fixed(value, prec ?? 2))}`;
       case "D": return (value < 0 ? "-" : "") + String(Math.abs(Math.trunc(value))).padStart(prec ?? 0, "0");
       case "X": return Math.trunc(value).toString(16).toUpperCase().padStart(prec ?? 0, "0");

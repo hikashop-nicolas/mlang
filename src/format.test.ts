@@ -35,7 +35,7 @@ describe("number format strings", () => {
   it("standard specifiers", async () => {
     expect(await js(`Number.ToText(1234.5, "N2")`)).toBe("1,234.50");
     expect(await js(`Number.ToText(1234.5, "F0")`)).toBe("1235");
-    expect(await js(`Number.ToText(0.1256, "P1")`)).toBe("12.6 %");
+    expect(await js(`Number.ToText(0.1256, "P1")`)).toBe("12.6%");
     expect(await js(`Number.ToText(1234.5, "C2")`)).toBe("$1,234.50");
     expect(await js(`Number.ToText(42, "D5")`)).toBe("00042");
     expect(await js(`Number.ToText(255, "X2")`)).toBe("FF");
