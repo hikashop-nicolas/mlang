@@ -1,6 +1,6 @@
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { parseDataMashup, readWorkbookQueries } from "./qdeff.js";
+import { parseDataMashup, readWorkbookQueries, serializeDataMashup, writeWorkbookSectionM } from "./qdeff.js";
 
 // Build a synthetic MS-QDEFF payload: version + 4 length-prefixed blocks, the first being
 // an OPC zip holding Formulas/Section1.m. Self-consistency fixture; a real-workbook
@@ -71,5 +71,47 @@ describe("qdeff", () => {
   it("rejects truncated payloads", () => {
     const good = buildDataMashup(SECTION);
     expect(() => parseDataMashup(good.subarray(0, 10))).toThrow(/truncated/);
+  });
+
+  describe("write path (M editing)", () => {
+    it("serialize with no change round-trips (version, blocks, sectionM preserved)", () => {
+      const dm = parseDataMashup(buildDataMashup(SECTION));
+      const re = parseDataMashup(serializeDataMashup(dm));
+      expect(re.version).toBe(dm.version);
+      expect(re.sectionM).toBe(SECTION);
+      expect(re.permissionsBytes).toEqual(dm.permissionsBytes);
+      expect(re.metadataBytes).toEqual(dm.metadataBytes);
+      expect(re.permissionBindings).toEqual(dm.permissionBindings);
+    });
+
+    it("replacing Section1.m keeps the other three blocks byte-for-byte", () => {
+      const dm = parseDataMashup(buildDataMashup(SECTION));
+      const NEW = "section Section1;\r\nshared Query1 = let Source = 2 * 21 in Source;";
+      const re = parseDataMashup(serializeDataMashup(dm, NEW));
+      expect(re.sectionM).toBe(NEW);
+      expect(re.permissionsBytes).toEqual(dm.permissionsBytes);
+      expect(re.metadataBytes).toEqual(dm.metadataBytes);
+      expect(re.permissionBindings).toEqual(dm.permissionBindings);
+      // Written Section1.m carries a UTF-8 BOM, as Excel writes it.
+      const key = Object.keys(re.parts).find((p) => p.endsWith("Section1.m"))!;
+      expect(Array.from(re.parts[key]!.subarray(0, 3))).toEqual([0xef, 0xbb, 0xbf]);
+    });
+
+    it("writeWorkbookSectionM updates the item and preserves everything else", () => {
+      const itemXml = `<?xml version="1.0"?><DataMashup xmlns="http://schemas.microsoft.com/DataMashup">${toB64(buildDataMashup(SECTION))}</DataMashup>`;
+      const entries: Record<string, Uint8Array> = {
+        "xl/workbook.xml": strToU8("<workbook/>"),
+        "customXml/item1.xml": strToU8(itemXml),
+      };
+      const NEW = "section Section1;\r\nshared Query1 = let Source = 99 in Source;";
+      const out = writeWorkbookSectionM(entries, NEW);
+      expect(out["xl/workbook.xml"]).toBe(entries["xl/workbook.xml"]); // untouched part reused
+      const q = readWorkbookQueries(out)!;
+      expect(q.mashup.sectionM).toBe(NEW);
+    });
+
+    it("throws when there is no query payload", () => {
+      expect(() => writeWorkbookSectionM({ "xl/workbook.xml": strToU8("<x/>") }, "section Section1;")).toThrow(/no Power Query/);
+    });
   });
 });

@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { unzipSync } from "fflate";
+import { unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { evaluateSection, toJS } from "./index.js";
-import { decodeOoxmlText, readWorkbookQueries } from "./qdeff.js";
+import { decodeOoxmlText, readWorkbookQueries, writeWorkbookSectionM } from "./qdeff.js";
 
 // Real-world workbook (Microsoft connected-workbooks template, MIT - see
 // test/fixtures/README.md): its DataMashup customXml item is UTF-16 LE, unlike the
@@ -31,5 +31,18 @@ describe("qdeff on a real workbook", () => {
     const utf16 = new Uint8Array([0xff, 0xfe, 0x41, 0x00, 0x42, 0x00]);
     expect(decodeOoxmlText(utf16)).toBe("AB");
     expect(decodeOoxmlText(new Uint8Array([0x41, 0x42]))).toBe("AB");
+  });
+
+  it("edits the real workbook's M and re-reads it (write round trip)", () => {
+    const entries = unzipSync(bytes);
+    const NEW = 'section Section1;\r\n\r\nshared Query1 = let\r\n    Source = "edited"\r\nin\r\n    Source;';
+    // Re-zip so the workbook is a genuine .xlsx byte stream again, then edit that.
+    const edited = writeWorkbookSectionM(entries, NEW);
+    const roundTripped = unzipSync(zipSync(edited));
+    const q = readWorkbookQueries(roundTripped)!;
+    expect(q.mashup.sectionM).toBe(NEW);
+    // The item stays UTF-16 LE (its original encoding), and other parts are unchanged.
+    expect(Array.from(roundTripped[q.itemPath]!.subarray(0, 2))).toEqual([0xff, 0xfe]);
+    expect(roundTripped["xl/workbook.xml"]).toEqual(entries["xl/workbook.xml"]);
   });
 });
