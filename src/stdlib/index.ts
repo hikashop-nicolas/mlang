@@ -13,6 +13,7 @@ import { registerDateTime } from "./datetime.js";
 import { registerDocument } from "./document.js";
 import { registerBinary } from "./binary.js";
 import { registerConnectors } from "./connectors.js";
+import { registerWorkbook } from "./workbook.js";
 
 export function registerStdlib(env: Env): void {
   registerConstants(env);
@@ -24,6 +25,7 @@ export function registerStdlib(env: Env): void {
   registerDateTime(env);
   registerDocument(env);
   registerBinary(env);
+  registerWorkbook(env);
   registerConnectors(env);
 
   // Error.Record: the constructor used by `error Error.Record(...)`.

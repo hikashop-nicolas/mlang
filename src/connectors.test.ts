@@ -35,7 +35,7 @@ describe("connectors", () => {
   });
 
   it("several connectors are registered", async () => {
-    for (const c of ["Folder.Files", "OData.Feed", "Excel.Workbook", "SharePoint.Tables"]) {
+    for (const c of ["Folder.Files", "OData.Feed", "Sql.Database", "SharePoint.Tables"]) {
       await expect(evaluate(`${c}("x")`)).rejects.toSatisfy((e) => isMissingConnector(e));
     }
   });

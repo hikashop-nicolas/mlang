@@ -24,7 +24,7 @@ export function missingConnectorName(e: MError): string {
 const CONNECTORS = [
   "Web.Contents", "Web.Page", "Web.BrowserContents",
   "File.Contents", "Folder.Contents", "Folder.Files",
-  "Excel.Workbook", "AzureStorage.Blobs", "AzureStorage.Tables",
+  "AzureStorage.Blobs", "AzureStorage.Tables",
   "Sql.Database", "Sql.Databases",
   "OData.Feed", "Odbc.DataSource", "Odbc.Query",
   "Access.Database", "Oracle.Database", "MySQL.Database", "PostgreSQL.Database",
