@@ -17,10 +17,15 @@ src/oracle.test.ts.
 - Bare `try` wraps success as `{HasError = false, Value = ...}` (spec; also fixed).
 - Lazy `let`: unused bindings never evaluate. Confirmed.
 
+- Default ToText/Text.From = en-US General format (date M/d/yyyy, time h:mm tt short,
+  datetime M/d/yyyy h:mm:ss tt). Custom + standard format strings implemented.
+- Number.ToText "P" percent format has NO space before % ("12.6%"). Confirmed.
+- Culture-aware Number.From / Date.From (decimal/group separators, D-M-Y order) for the
+  common cultures; fr-FR U+00A0 group tolerated as a plain space. Confirmed.
+
 ## Open
 
-- Numbers are IEEE doubles only (no decimal/precision mode); culture-aware parsing and
-  formatting beyond the en-US defaults is not implemented.
+- Numbers are IEEE doubles only (no decimal/precision mode).
 - `as type` ascriptions are pass-throughs (no runtime conformance check yet).
 - `Table.AddColumn` stores `null` where Excel stores a per-cell error value.
 - Dates/times/durations/binary are not implemented yet (Tier 1).
