@@ -71,6 +71,8 @@ export function registerTable(env: Env): void {
     const k1 = namesOf(a[1]!, "join key").map((c) => colIndex(t1, c));
     const k2 = namesOf(a[3]!, "join key").map((c) => colIndex(t2, c));
     const kind = a[4] && a[4].kind === "number" ? a[4].value : 0; // Inner default
+    // Excel rejects a join that would produce duplicate column names (e.g. same-named keys).
+    for (const c of t2.columns) if (t1.columns.includes(c)) err("Expression.Error", `A join operation cannot result in a table with duplicate column names ("${c}").`);
     const byKey = new Map<string, number[]>();
     for (let j = 0; j < t2.rows.length; j++) {
       const k = JSON.stringify(k2.map((c) => keyOf(t2.rows[j]![c] ?? NULL)));

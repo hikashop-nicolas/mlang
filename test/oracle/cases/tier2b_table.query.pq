@@ -4,5 +4,5 @@
     Pre = Table.PrefixColumns(#table({"A"}, {{1}}), "T"),
     FromV = Table.FromValue({10, 20}),
     Exp = Table.ExpandRecordColumn(#table({"K", "R"}, {{1, [a = 10, b = 20]}}), "R", {"a", "b"}),
-    Joined = Table.Join(#table({"K", "V"}, {{1, "a"}, {2, "b"}}), "K", #table({"K", "W"}, {{1, "x"}}), "K", JoinKind.LeftOuter)
+    Joined = Table.Join(#table({"K", "V"}, {{1, "a"}, {2, "b"}}), "K", #table({"K2", "W"}, {{1, "x"}}), "K2", JoinKind.LeftOuter)
 ]

@@ -58,9 +58,9 @@ describe("Tier-2 batch 2 (from real M corpus)", () => {
   });
 
   it("Table.Join (inner + left outer)", async () => {
-    const setup = `#table({"K", "V"}, {{1, "a"}, {2, "b"}}), "K", #table({"K", "W"}, {{1, "x"}}), "K"`;
+    const setup = `#table({"K", "V"}, {{1, "a"}, {2, "b"}}), "K", #table({"K2", "W"}, {{1, "x"}}), "K2"`;
     const inner = (await js(`Table.Join(${setup}, JoinKind.Inner)`)) as T;
-    expect(inner.columns).toEqual(["K", "V", "K", "W"]);
+    expect(inner.columns).toEqual(["K", "V", "K2", "W"]);
     expect(inner.rows).toEqual([[1, "a", 1, "x"]]);
     const left = (await js(`Table.Join(${setup}, JoinKind.LeftOuter)`)) as T;
     expect(left.rows).toEqual([[1, "a", 1, "x"], [2, "b", null, null]]);
