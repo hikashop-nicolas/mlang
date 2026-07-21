@@ -3,7 +3,7 @@
 // propagate until try...otherwise; null propagates through arithmetic; three-valued and/or.
 // The parser AST is consumed structurally (one place to adapt if its shape changes).
 
-import { MError, NULL, err, equals, compare, logical, number, text, rowRecord, type MFunction, type MValue } from "./values";
+import { MError, NULL, err, equals, compare, logical, number, text, rowRecord, type MFunction, type MValue } from "./values.js";
 
 // Minimal structural view of parser nodes; every access goes through helpers below.
 interface Node {

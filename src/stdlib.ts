@@ -2,8 +2,8 @@
 // public Microsoft Learn reference. Every function raises a precise "unsupported" error for
 // argument shapes it doesn't cover yet, so gaps are visible rather than silently wrong.
 
-import { Env } from "./interpret";
-import { MError, NULL, err, expect, list, logical, number, rowRecord, table, text, type MFunction, type MValue } from "./values";
+import { Env } from "./interpret.js";
+import { MError, NULL, err, expect, list, logical, number, rowRecord, table, text, type MFunction, type MValue } from "./values.js";
 
 type Table = Extract<MValue, { kind: "table" }>;
 

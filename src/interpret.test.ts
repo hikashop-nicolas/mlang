@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { evaluate, evaluateSection, toJS, type HostBindings } from "./index";
-import { number, table, text, type MValue } from "./values";
+import { number, table, text, type MValue } from "./values.js";
 
 const js = async (m: string, host?: HostBindings): Promise<unknown> => toJS(await evaluate(m, host));
 

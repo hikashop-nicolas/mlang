@@ -1,6 +1,6 @@
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { parseDataMashup, readWorkbookQueries } from "./qdeff";
+import { parseDataMashup, readWorkbookQueries } from "./qdeff.js";
 
 // Build a synthetic MS-QDEFF payload: version + 4 length-prefixed blocks, the first being
 // an OPC zip holding Formulas/Section1.m. Self-consistency fixture; a real-workbook

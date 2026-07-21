@@ -6,12 +6,12 @@
 // external data sources must be injected by the host via `HostBindings`.
 
 import { DefaultSettings, TaskUtils } from "@microsoft/powerquery-parser";
-import { Env, evalNode, evalSection } from "./interpret";
-import { registerStdlib } from "./stdlib";
-import { MError, type MValue } from "./values";
+import { Env, evalNode, evalSection } from "./interpret.js";
+import { registerStdlib } from "./stdlib.js";
+import { MError, type MValue } from "./values.js";
 
-export { MError, toJS, type MValue } from "./values";
-export { decodeIdentifier, decodeTextLiteral } from "./interpret";
+export { MError, toJS, type MValue } from "./values.js";
+export { decodeIdentifier, decodeTextLiteral } from "./interpret.js";
 
 /** Values (usually connector functions like Excel.CurrentWorkbook) injected by the host. */
 export type HostBindings = Record<string, MValue>;
