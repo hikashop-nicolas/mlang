@@ -1,0 +1,1 @@
+[ R1 = {"A", "B"} , R2 = 9, R3 = [ A = 1, B = 2 ] , R4 = [ B = 2 ] , R5 = #table( type table [Name = text, Value = any] , {{"A", 1} } )  ] 

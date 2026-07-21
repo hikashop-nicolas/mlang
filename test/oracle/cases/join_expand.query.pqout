@@ -1,0 +1,1 @@
+#table( type table [ID = any, Cust = any, Name = any] , {{1, "a", "Alice"} , {2, "b", "Bob"} , {3, "c", null} } ) 

@@ -1,0 +1,1 @@
+[ R = #table( type table [A = text] , {{"dog"} , {"dogalog"} } ) , S = #table( type table [N.1 = text, N.2 = text] , {{"a", "b"} , {"c", null} } )  ] 

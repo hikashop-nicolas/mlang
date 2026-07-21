@@ -1,0 +1,1 @@
+#table( type table [K = any, Q1 = any, Q2 = any] , {{"a", 1, 2} , {"b", 3, null} } ) 

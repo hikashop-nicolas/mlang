@@ -1,0 +1,1 @@
+[ I = #table( type table [A = any, Idx = number] , {{10, 1} , {20, 2} } ) , D = #table( type table [Column1 = any, Column2 = any] , {{"A", "B"} , {1, 2} } )  ] 

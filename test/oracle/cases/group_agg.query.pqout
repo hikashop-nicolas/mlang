@@ -1,0 +1,1 @@
+#table( type table [Cat = any, Total = any, N = any] , {{"A", 17, 2} , {"B", 3, 1} } ) 
