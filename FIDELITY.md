@@ -24,6 +24,10 @@ src/oracle.test.ts.
   common cultures; fr-FR U+00A0 group tolerated as a plain space. Confirmed.
 
 ## Open
+- Async connectors resolve by REPLAY: the evaluator stays synchronous and re-runs the pure
+  computation once per distinct connector source (N sources => N+1 passes). Correct because
+  evaluation is pure and connector results are cached per refresh; the cost is recomputation,
+  not re-fetching. A fully async evaluator would avoid the re-runs but is not implemented.
 
 - Numbers are IEEE doubles only (no decimal/precision mode).
 - `as type` ascriptions are pass-throughs (no runtime conformance check yet).
