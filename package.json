@@ -1,0 +1,31 @@
+{
+  "name": "mlang",
+  "version": "0.1.0",
+  "description": "Clean-room Power Query M evaluator for the browser: parse (via @microsoft/powerquery-parser), evaluate a documented subset of M, and read workbook query definitions (MS-QDEFF DataMashup). No Microsoft binaries, no network.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./qdeff": { "types": "./dist/qdeff.d.ts", "import": "./dist/qdeff.js" }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "dev": "vite",
+    "build:demo": "vite build"
+  },
+  "dependencies": {
+    "@microsoft/powerquery-parser": "^0.15.0",
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16",
+    "vitest": "^4.0.0"
+  }
+}

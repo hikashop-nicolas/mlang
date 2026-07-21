@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mlang demo</title>
+    <style>
+      body { margin: 0 auto; padding: 16px; max-width: 900px; font-family: system-ui, sans-serif; color: #1a1a1a; }
+      h1 { font-size: 18px; } p { color: #667; font-size: 13px; }
+      textarea { width: 100%; box-sizing: border-box; min-height: 160px; font: 13px/1.5 ui-monospace, monospace; }
+      button { font: inherit; padding: 6px 14px; border-radius: 7px; border: 1px solid #d5d8dc; background: #f5f6f7; cursor: pointer; }
+      .out { white-space: pre; overflow-x: auto; background: #f7f8f9; border-radius: 7px; padding: 10px; min-height: 20px; font: 13px/1.5 ui-monospace, monospace; }
+      .err { color: #b3261e; }
+    </style>
+  </head>
+  <body>
+    <h1>mlang — clean-room Power Query M evaluator (in your browser)</h1>
+    <p>The sample workbook has a table <b>Sales</b> (Product, Qty, Price). Edit the query and Run; everything happens on this device.</p>
+    <textarea id="m">let
+  Source = Excel.CurrentWorkbook(){[Name="Sales"]}[Content],
+  Typed = Table.TransformColumnTypes(Source, {{"Qty", type number}, {"Price", type number}}),
+  Filtered = Table.SelectRows(Typed, each [Qty] > 5),
+  Total = Table.AddColumn(Filtered, "Total", each [Qty] * [Price]),
+  Sorted = Table.Sort(Total, {{"Total", Order.Descending}})
+in
+  Sorted</textarea>
+    <p><button id="run">Run</button></p>
+    <div class="out" id="out"></div>
+    <script type="module" src="./demo.ts"></script>
+  </body>
+</html>
