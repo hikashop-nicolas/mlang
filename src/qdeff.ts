@@ -73,11 +73,19 @@ export interface WorkbookQueries {
   itemPath: string;
 }
 
+/** Decode an OOXML text part honouring its BOM: real Excel writes the DataMashup
+    customXml item as UTF-16 LE (FF FE), not UTF-8. */
+export function decodeOoxmlText(data: Uint8Array): string {
+  if (data.length >= 2 && data[0] === 0xff && data[1] === 0xfe) return new TextDecoder("utf-16le").decode(data.subarray(2));
+  if (data.length >= 2 && data[0] === 0xfe && data[1] === 0xff) return new TextDecoder("utf-16be").decode(data.subarray(2));
+  return strFromU8(data);
+}
+
 /** Extract the query definitions from an unzipped .xlsx (entry map path -> bytes). */
 export function readWorkbookQueries(entries: Record<string, Uint8Array>): WorkbookQueries | null {
   for (const [path, data] of Object.entries(entries)) {
     if (!/^customXml\/item\d+\.xml$/i.test(path)) continue;
-    const xml = strFromU8(data);
+    const xml = decodeOoxmlText(data);
     if (!xml.includes("DataMashup")) continue;
     const payload = dataMashupFromItemXml(xml);
     if (payload) return { mashup: parseDataMashup(payload), itemPath: path };
