@@ -14,6 +14,7 @@ import { registerDocument } from "./document.js";
 import { registerBinary } from "./binary.js";
 import { registerConnectors } from "./connectors.js";
 import { registerWorkbook } from "./workbook.js";
+import { registerXml } from "./xml.js";
 
 export function registerStdlib(env: Env): void {
   registerConstants(env);
@@ -26,6 +27,7 @@ export function registerStdlib(env: Env): void {
   registerDocument(env);
   registerBinary(env);
   registerWorkbook(env);
+  registerXml(env);
   registerConnectors(env);
 
   // Error.Record: the constructor used by `error Error.Record(...)`.

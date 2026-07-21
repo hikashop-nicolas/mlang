@@ -164,8 +164,8 @@ describe("the spike query (workbook-backed)", () => {
     const sectionM = `section Section1;\nshared Sales_Query = ${SPIKE};\nshared RowTotal = Table.RowCount(Sales_Query);`;
     const q = await evaluateSection(sectionM, host);
     expect(q.names).toEqual(["Sales_Query", "RowTotal"]);
-    expect(toJS(q.run("RowTotal"))).toBe(2);
-    const t = toJS(q.run("Sales_Query")) as { rows: unknown[][] };
+    expect(toJS(await q.run("RowTotal"))).toBe(2);
+    const t = toJS(await q.run("Sales_Query")) as { rows: unknown[][] };
     expect(t.rows.length).toBe(2);
   });
 

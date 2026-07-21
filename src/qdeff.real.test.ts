@@ -24,7 +24,7 @@ describe("qdeff on a real workbook", () => {
     const q = readWorkbookQueries(unzipSync(bytes))!;
     const section = await evaluateSection(q.mashup.sectionM, {});
     expect(section.names).toEqual(["Query1"]);
-    expect(toJS(section.run("Query1"))).toBe("");
+    expect(toJS(await section.run("Query1"))).toBe("");
   });
 
   it("decodeOoxmlText handles BOMs", () => {
