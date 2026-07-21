@@ -7,7 +7,7 @@
 
 import { DefaultSettings, TaskUtils } from "@microsoft/powerquery-parser";
 import { Env, evalNode, evalSection } from "./interpret.js";
-import { registerStdlib } from "./stdlib.js";
+import { registerStdlib } from "./stdlib/index.js";
 import { MError, type MValue } from "./values.js";
 
 export { MError, toJS, type MValue } from "./values.js";
