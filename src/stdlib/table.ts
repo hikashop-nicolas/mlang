@@ -237,7 +237,9 @@ export function registerTable(env: Env): void {
       const col = textOf(colV!, "transform column");
       const ci = colIndex(t, col);
       if (typeV!.kind !== "type") err("Expression.Error", "Expected a type value.");
-      types.set(col, typeV as MType);
+      // Excel makes transformed columns nullable, so ColumnsOfType({Int64.Type}) yields {}
+      // (a nullable Int64.Type is not the non-nullable Int64.Type) - oracle-confirmed.
+      types.set(col, { ...(typeV as MType), nullable: true });
       for (const r of rows) r[ci] = convertTo(r[ci] ?? NULL, typeV!.name, col);
     }
     return table(t.columns, rows, types);

@@ -29,11 +29,12 @@ describe("type model", () => {
     expect(await js(`Value.Is("x", type number)`)).toBe(false);
   });
 
-  it("Table.ColumnsOfType matches nominally (Int64.Type != type number)", async () => {
+  it("Table.ColumnsOfType (nullable columns -> only type any matches)", async () => {
     const typed = `Table.TransformColumnTypes(#table({"N", "S"}, {{"1", "x"}}), {{"N", Int64.Type}, {"S", type text}})`;
-    expect(await js(`Table.ColumnsOfType(${typed}, {Int64.Type})`)).toEqual(["N"]);
-    expect(await js(`Table.ColumnsOfType(${typed}, {type text})`)).toEqual(["S"]);
-    expect(await js(`Table.ColumnsOfType(${typed}, {type number})`)).toEqual([]); // Int64.Type is not `type number`
+    // TransformColumnTypes makes columns nullable, so a non-nullable specific type never
+    // matches; only type any does (oracle-confirmed).
+    expect(await js(`Table.ColumnsOfType(${typed}, {Int64.Type})`)).toEqual([]);
+    expect(await js(`Table.ColumnsOfType(${typed}, {type text})`)).toEqual([]);
     expect(await js(`Table.ColumnsOfType(${typed}, {type any})`)).toEqual(["N", "S"]);
   });
 
