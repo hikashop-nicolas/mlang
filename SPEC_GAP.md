@@ -75,12 +75,22 @@ BinaryFormat.7BitEncodedUnsignedInteger.
 
 Uri: Uri.Parts.
 
-## Tier 2 - type system (needs a richer function/facet/table-key type model) (17)
+## Tier 2 - type system (17) — DONE (2026-07-22)
+
+Implemented. The type model (MType) grew function `parameters`/`returnType`/
+`requiredParameters`, typed record `fields` + `open`, table `keys`, and advisory `facets`;
+`structuredType` now parses function/record/table type AST into those, and `mtypeOfValue`
+exposes a function value's parameters. Validated by `src/type-system.test.ts` + the
+`typesystem` oracle case.
 
 Type.FunctionReturn, Type.FunctionParameters, Type.FunctionRequiredParameters,
 Type.ForFunction, Type.ForRecord, Type.RecordFields, Type.OpenRecord, Type.IsOpenRecord,
 Type.ClosedRecord, Type.TableRow, Type.TableSchema, Type.TableKeys, Type.AddTableKey,
 Type.ReplaceTableKeys, Type.Facets, Type.ReplaceFacets, Type.Union.
+
+Known shallow spots (pending oracle): Type.Facets returns an empty record for built-in
+types (facets aren't tracked, only round-tripped through ReplaceFacets); Type.Union widens
+any mixed set to `any` rather than forming a true union type.
 
 ## Tier 3 - geography / geometry WKT (niche but real) (6)
 

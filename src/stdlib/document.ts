@@ -5,7 +5,7 @@ import type { Env } from "../interpret.js";
 import { NULL, binary, compare, equals as equalsVal, err, list, logical, number, record, table, text, typeVal, type MFunction, type MType, type MValue } from "../values.js";
 import { fn, listOf, textOf, type Table } from "./helpers.js";
 import { fromJson } from "../host.js";
-import { mtypeOfValue, subtypeOf, valueMatchesType } from "../types.js";
+import { mtypeOfValue, subtypeOf, typeName, valueMatchesType } from "../types.js";
 
 const asFunc = (v: MValue | undefined, who: string): MFunction => {
   if (!v || v.kind !== "function") err("Expression.Error", `${who}: expected a function.`);
@@ -372,6 +372,92 @@ export function registerDocument(env: Env): void {
     const col = t.columns?.find((c) => c.name === textOf(a[1]!, "column"));
     if (!col) err("Expression.Error", `Type.TableColumn: no column '${textOf(a[1]!, "column")}'.`);
     return typeVal(col.type);
+  }));
+
+  // --- Function types --------------------------------------------------------------------
+  def("Type.FunctionReturn", fn("Type.FunctionReturn", [{ name: "type" }], (a) => typeVal(asType(a[0], "Type.FunctionReturn").returnType ?? { name: "any" })));
+  def("Type.FunctionParameters", fn("Type.FunctionParameters", [{ name: "type" }], (a) => {
+    const params = asType(a[0], "Type.FunctionParameters").parameters ?? [];
+    return { kind: "record", fields: new Map(params.map((p) => [p.name, typeVal(p.type)])) };
+  }));
+  def("Type.FunctionRequiredParameters", fn("Type.FunctionRequiredParameters", [{ name: "type" }], (a) => {
+    const t = asType(a[0], "Type.FunctionRequiredParameters");
+    return number(t.requiredParameters ?? (t.parameters ?? []).filter((p) => !p.optional).length);
+  }));
+  def("Type.ForFunction", fn("Type.ForFunction", [{ name: "signature" }, { name: "min" }], (a) => {
+    const sig = a[0]!;
+    if (sig.kind !== "record") err("Expression.Error", "Type.ForFunction: signature must be a record.");
+    const min = a[1]!.kind === "number" ? a[1]!.value : err("Expression.Error", "Type.ForFunction: min must be a number.");
+    const retV = sig.fields.get("ReturnType"); const paramsV = sig.fields.get("Parameters");
+    const paramEntries = paramsV?.kind === "record" ? [...paramsV.fields] : [];
+    const parameters = paramEntries.map(([name, t], i) => ({ name, type: asType(t, "Type.ForFunction parameter"), optional: i >= min }));
+    return typeVal({ name: "function", parameters, returnType: retV ? asType(retV, "Type.ForFunction ReturnType") : { name: "any" }, requiredParameters: min });
+  }));
+
+  // --- Record types ----------------------------------------------------------------------
+  def("Type.RecordFields", fn("Type.RecordFields", [{ name: "type" }], (a) => {
+    const fields = asType(a[0], "Type.RecordFields").fields ?? [];
+    return { kind: "record", fields: new Map(fields.map((f) => [f.name, record([["Type", typeVal(f.type)], ["Optional", logical(!!f.optional)]])])) };
+  }));
+  def("Type.ForRecord", fn("Type.ForRecord", [{ name: "fields" }, { name: "open" }], (a) => {
+    const rec = a[0]!;
+    if (rec.kind !== "record") err("Expression.Error", "Type.ForRecord: fields must be a record.");
+    const fields = [...rec.fields].map(([name, spec]) => {
+      if (spec.kind !== "record") err("Expression.Error", "Type.ForRecord: each field must be a [Type=..., Optional=...] record.");
+      return { name, type: asType(spec.fields.get("Type"), "Type.ForRecord Type"), optional: logicalTrue(spec.fields.get("Optional") ?? logical(false)) };
+    });
+    return typeVal({ name: "record", fields, open: logicalTrue(a[1]!) });
+  }));
+  def("Type.OpenRecord", fn("Type.OpenRecord", [{ name: "type" }], (a) => typeVal({ ...asType(a[0], "Type.OpenRecord"), open: true })));
+  def("Type.ClosedRecord", fn("Type.ClosedRecord", [{ name: "type" }], (a) => typeVal({ ...asType(a[0], "Type.ClosedRecord"), open: false })));
+  def("Type.IsOpenRecord", fn("Type.IsOpenRecord", [{ name: "type" }], (a) => {
+    const t = asType(a[0], "Type.IsOpenRecord");
+    if (t.name !== "record") err("Expression.Error", "Type.IsOpenRecord: expected a record type.");
+    return logical(!!t.open);
+  }));
+
+  // --- Table types -----------------------------------------------------------------------
+  def("Type.TableRow", fn("Type.TableRow", [{ name: "type" }], (a) => {
+    const t = asType(a[0], "Type.TableRow");
+    return typeVal({ name: "record", fields: (t.columns ?? []).map((c) => ({ name: c.name, type: c.type, optional: false })), open: false });
+  }));
+  def("Type.TableSchema", fn("Type.TableSchema", [{ name: "tableType" }], (a) => {
+    const t = asType(a[0], "Type.TableSchema");
+    const cols = ["Name", "Position", "TypeName", "Kind", "IsNullable"];
+    const rows = (t.columns ?? []).map((c, i) => [text(c.name), number(i), text(typeName(c.type)), text(c.type.name), logical(!!c.type.nullable)]);
+    return table(cols, rows);
+  }));
+  def("Type.TableKeys", fn("Type.TableKeys", [{ name: "type" }], (a) => {
+    const keys = asType(a[0], "Type.TableKeys").keys ?? [];
+    return list(keys.map((k) => record([["Columns", list(k.columns.map(text))], ["Primary", logical(k.primary)]])));
+  }));
+  def("Type.AddTableKey", fn("Type.AddTableKey", [{ name: "type" }, { name: "columns" }, { name: "isPrimary" }], (a) => {
+    const t = asType(a[0], "Type.AddTableKey");
+    const cols = listOf(a[1]!, "Type.AddTableKey columns").map((c) => textOf(c, "column"));
+    return typeVal({ ...t, keys: [...(t.keys ?? []), { columns: cols, primary: logicalTrue(a[2]!) }] });
+  }));
+  def("Type.ReplaceTableKeys", fn("Type.ReplaceTableKeys", [{ name: "type" }, { name: "keys" }], (a) => {
+    const t = asType(a[0], "Type.ReplaceTableKeys");
+    const keys = listOf(a[1]!, "Type.ReplaceTableKeys keys").map((k) => {
+      if (k.kind !== "record") err("Expression.Error", "Type.ReplaceTableKeys: each key must be a record.");
+      return { columns: listOf(k.fields.get("Columns") ?? list([]), "Columns").map((c) => textOf(c, "column")), primary: logicalTrue(k.fields.get("Primary") ?? logical(false)) };
+    });
+    return typeVal({ ...t, keys });
+  }));
+
+  // --- Facets & union --------------------------------------------------------------------
+  def("Type.Facets", fn("Type.Facets", [{ name: "type" }], (a) => asType(a[0], "Type.Facets").facets ?? { kind: "record", fields: new Map() }));
+  def("Type.ReplaceFacets", fn("Type.ReplaceFacets", [{ name: "type" }, { name: "facets" }], (a) => {
+    const facets = a[1]!;
+    if (facets.kind !== "record") err("Expression.Error", "Type.ReplaceFacets: facets must be a record.");
+    return typeVal({ ...asType(a[0], "Type.ReplaceFacets"), facets });
+  }));
+  def("Type.Union", fn("Type.Union", [{ name: "types" }], (a) => {
+    const types = listOf(a[0]!, "Type.Union").map((t) => asType(t, "Type.Union"));
+    if (!types.length) return typeVal({ name: "none" });
+    const first = types[0]!;
+    const uniform = types.every((t) => t.name === first.name && !!t.nullable === !!first.nullable);
+    return typeVal(uniform ? first : { name: "any" });
   }));
 }
 

@@ -488,27 +488,44 @@ const expectLogical = (v: MValue): boolean => {
 const primitiveName = (n: Node): string => (n.primitiveTypeKind as string) ?? "any";
 
 /** Field/column names from a table- or record-type node (decoding #"quoted" identifiers). */
-function typeFieldNames(node: Node): string[] {
-  const specs: Node[] = [];
-  const collect = (nd: unknown): void => {
-    const n = nd as Node;
-    if (!n || typeof n !== "object") return;
-    if (n.kind === "FieldSpecification") specs.push(n);
-    for (const v of Object.values(n)) {
-      if (Array.isArray(v)) v.forEach((x) => collect((x as Node)?.node ?? x));
-      else if (v && typeof v === "object") collect(v);
-    }
-  };
-  collect(node);
-  return specs.map((s) => decodeIdentifier(child(s, "name").literal as string));
-}
 
 /** Build a structured type from a PrimaryType AST node (columns/fields typed loosely). */
-function structuredType(node: Node): MType {
-  if (node.kind === "TableType") return { name: "table", columns: typeFieldNames(node).map((name) => ({ name, type: { name: "any" } })) };
-  if (node.kind === "RecordType") return { name: "record", fields: typeFieldNames(node).map((name) => ({ name, type: { name: "any" } })) };
+/** Field specs (name + type + optional) from a FieldSpecificationList node. */
+function fieldSpecList(listNode: unknown): { name: string; type: MType; optional?: boolean }[] {
+  const elements = ((listNode as Node)?.content as Node)?.elements as Node[] | undefined;
+  if (!elements) return [];
+  return elements.map((e) => {
+    const fs = (e.node ?? e) as Node;
+    const fieldType = ((fs.fieldTypeSpecification as Node)?.fieldType) as Node | undefined;
+    return {
+      name: decodeIdentifier((child(fs, "name").literal as string)),
+      type: fieldType ? structuredType(fieldType) : { name: "any" },
+      optional: !!fs.optionalConstant,
+    };
+  });
+}
+
+export function structuredType(node: Node): MType {
+  if (node.kind === "FunctionType") {
+    const elements = ((node.parameters as Node)?.content as Node)?.elements as Node[] | undefined;
+    const parameters = (elements ?? []).map((e) => {
+      const p = (e.node ?? e) as Node;
+      const paired = (p.parameterType as Node)?.paired as Node | undefined;
+      return { name: decodeIdentifier(child(p, "name").literal as string), optional: !!p.optionalConstant, type: paired ? structuredType(paired) : { name: "any" } };
+    });
+    const retPaired = (node.functionReturnType as Node)?.paired as Node | undefined;
+    return { name: "function", parameters, returnType: retPaired ? structuredType(retPaired) : { name: "any" }, requiredParameters: parameters.filter((p) => !p.optional).length };
+  }
+  if (node.kind === "TableType") {
+    const rt = node.rowType as Node | undefined;
+    const cols = rt?.kind === "FieldSpecificationList" ? fieldSpecList(rt).map((f) => ({ name: f.name, type: f.type })) : [];
+    return { name: "table", columns: cols };
+  }
+  if (node.kind === "RecordType") {
+    const fl = node.fields as Node | undefined;
+    return { name: "record", fields: fieldSpecList(fl), open: !!fl?.openRecordMarkerConstant };
+  }
   if (node.kind === "ListType") return { name: "list", item: { name: "any" } };
-  if (node.kind === "FunctionType") return { name: "function" };
   if (node.kind === "NullableType" || node.kind === "NullablePrimitiveType") return { ...structuredType(child(node, "paired")), nullable: true };
   return { name: primitiveName(node) };
 }

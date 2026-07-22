@@ -30,6 +30,11 @@ export interface MType {
   columns?: { name: string; type: MType }[]; // table columns
   fields?: { name: string; type: MType; optional?: boolean }[]; // record fields
   open?: boolean; // open record type
+  parameters?: { name: string; type: MType; optional: boolean }[]; // function parameters
+  returnType?: MType; // function return type
+  requiredParameters?: number; // minimum arguments to invoke a function type
+  facets?: MValue; // advisory facet record (Type.Facets / Type.ReplaceFacets)
+  keys?: { columns: string[]; primary: boolean }[]; // table-type keys
 }
 export type MTypeValue = { kind: "type" } & MType;
 

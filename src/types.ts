@@ -20,6 +20,8 @@ export function mtypeOfValue(v: MValue): MType {
       return { name: "table", columns: v.columns.map((c) => ({ name: c, type: v.types?.get(c) ?? { name: "any" } })) };
     case "null":
       return { name: "null", nullable: true };
+    case "function":
+      return { name: "function", parameters: v.params.map((p) => ({ name: p.name, type: { name: "any" }, optional: p.optional })), returnType: { name: "any" }, requiredParameters: v.params.filter((p) => !p.optional).length };
     case "type":
       return { name: "type" };
     default:
