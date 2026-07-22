@@ -51,6 +51,25 @@ export function registerRecord(env: Env): void {
     return { kind: "table", columns: ["Name", "Value"], rows: [...r.fields].map(([k, v]) => [text(k), v]) };
   }));
   def("Record.FieldValues", fn("Record.FieldValues", [{ name: "record" }], (a) => list([...rec(a[0]!, "Record.FieldValues").fields.values()])));
+  def("Record.ToList", fn("Record.ToList", [{ name: "record" }], (a) => list([...rec(a[0]!, "Record.ToList").fields.values()])));
+  def("Record.RenameFields", fn("Record.RenameFields", [{ name: "record" }, { name: "renames" }, { name: "missingField", optional: true }], (a) => {
+    const r = rec(a[0]!, "Record.RenameFields");
+    const pairs = a[1]!.kind === "list" && a[1]!.items[0]?.kind === "list" ? a[1]!.items : [a[1]!];
+    const renameMap = new Map<string, string>();
+    for (const p of pairs) { const l = expect(p, "list", "rename"); renameMap.set(textOf(l.items[0]!, "from"), textOf(l.items[1]!, "to")); }
+    const fields = new Map<string, MValue>();
+    for (const [k, v] of r.fields) fields.set(renameMap.get(k) ?? k, v);
+    return { kind: "record", fields };
+  }));
+  def("Record.TransformFields", fn("Record.TransformFields", [{ name: "record" }, { name: "transforms" }, { name: "missingField", optional: true }], (a) => {
+    const r = rec(a[0]!, "Record.TransformFields");
+    const pairs = a[1]!.kind === "list" && a[1]!.items[0]?.kind === "list" ? a[1]!.items : [a[1]!];
+    const fns = new Map<string, MValue>();
+    for (const p of pairs) { const l = expect(p, "list", "transform"); fns.set(textOf(l.items[0]!, "field"), l.items[1]!); }
+    const fields = new Map<string, MValue>();
+    for (const [k, v] of r.fields) { const f = fns.get(k); fields.set(k, f && f.kind === "function" ? f.call([v]) : v); }
+    return { kind: "record", fields };
+  }));
   def("Record.Combine", fn("Record.Combine", [{ name: "records" }], (a) => {
     const fields = new Map<string, MValue>();
     for (const r of (a[0]!.kind === "list" ? a[0]!.items : [a[0]!])) for (const [k, v] of rec(r, "Record.Combine").fields) fields.set(k, v);

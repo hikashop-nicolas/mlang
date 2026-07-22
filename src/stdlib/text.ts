@@ -200,6 +200,34 @@ export function registerText(env: Env): void {
     return list(textOf(a[0]!, "Text.SplitAny").split(re).map(text));
   }));
 
+  def("Text.Insert", nn("Text.Insert", [{ name: "text" }, { name: "offset" }, { name: "newText" }], (a) => {
+    const s = textOf(a[0]!, "Text.Insert");
+    const off = numOf(a[1]!, "offset");
+    return text(s.slice(0, off) + textOf(a[2]!, "newText") + s.slice(off));
+  }));
+  def("Text.RemoveRange", nn("Text.RemoveRange", [{ name: "text" }, { name: "offset" }, { name: "count", optional: true }], (a) => {
+    const s = textOf(a[0]!, "Text.RemoveRange");
+    const off = numOf(a[1]!, "offset");
+    const count = a[2] && a[2].kind === "number" ? a[2].value : 1;
+    return text(s.slice(0, off) + s.slice(off + count));
+  }));
+  def("Text.ReplaceRange", nn("Text.ReplaceRange", [{ name: "text" }, { name: "offset" }, { name: "count" }, { name: "newText" }], (a) => {
+    const s = textOf(a[0]!, "Text.ReplaceRange");
+    const off = numOf(a[1]!, "offset");
+    return text(s.slice(0, off) + textOf(a[3]!, "newText") + s.slice(off + numOf(a[2]!, "count")));
+  }));
+  // Text.Format: #{n} from a positional list, or #[name] from a record.
+  def("Text.Format", fn("Text.Format", [{ name: "formatString" }, { name: "arguments" }, { name: "culture", optional: true }], (a) => {
+    const fmt = textOf(a[0]!, "Text.Format");
+    const args = a[1]!;
+    const val = (key: string): string => {
+      if (args.kind === "list") return textFrom(args.items[Number(key)] ?? NULL);
+      if (args.kind === "record") return textFrom(args.fields.get(key) ?? NULL);
+      return textFrom(args);
+    };
+    return text(fmt.replace(/#\{([^}]*)\}/g, (_, k) => val(k.trim())).replace(/#\[([^\]]*)\]/g, (_, k) => val(k.trim())));
+  }));
+
   def("Character.FromNumber", fn("Character.FromNumber", [{ name: "number" }], (a) => text(String.fromCodePoint(numOf(a[0]!, "Character.FromNumber")))));
   def("Character.ToNumber", fn("Character.ToNumber", [{ name: "character" }], (a) => number(textOf(a[0]!, "Character.ToNumber").codePointAt(0) ?? 0)));
 

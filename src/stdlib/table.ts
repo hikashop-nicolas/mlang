@@ -67,6 +67,32 @@ export function registerTable(env: Env): void {
     const t = asTable(a[0]!, "Table.ToRecords");
     return list(t.rows.map((_, i) => rowRecord(t, i)));
   }));
+  def("Table.Repeat", fn("Table.Repeat", [{ name: "table" }, { name: "count" }], (a) => {
+    const t = asTable(a[0]!, "Table.Repeat");
+    const n = typeof (a[1] as { value?: number }).value === "number" ? (a[1] as { value: number }).value : 0;
+    const rows: MValue[][] = [];
+    for (let i = 0; i < n; i++) rows.push(...t.rows.map((r) => [...r]));
+    return table(t.columns, rows, t.types);
+  }));
+  def("Table.Split", fn("Table.Split", [{ name: "table" }, { name: "pageSize" }], (a) => {
+    const t = asTable(a[0]!, "Table.Split");
+    const size = Math.max(1, (a[1] as { value?: number }).value ?? 1);
+    const pages: MValue[] = [];
+    for (let i = 0; i < t.rows.length; i += size) pages.push(table(t.columns, t.rows.slice(i, i + size), t.types));
+    return list(pages);
+  }));
+  def("Table.Partition", fn("Table.Partition", [{ name: "table" }, { name: "column" }, { name: "groups" }, { name: "hashFunction" }], (a) => {
+    const t = asTable(a[0]!, "Table.Partition");
+    const ci = colIndex(t, textOf(a[1]!, "column"));
+    const groups = (a[2] as { value?: number }).value ?? 1;
+    const buckets: MValue[][][] = Array.from({ length: groups }, () => []);
+    for (const r of t.rows) {
+      const h = callFn(a[3]!, [r[ci] ?? NULL]);
+      const idx = ((h.kind === "number" ? Math.trunc(h.value) : 0) % groups + groups) % groups;
+      buckets[idx]!.push(r);
+    }
+    return list(buckets.map((rows) => table(t.columns, rows, t.types)));
+  }));
   def("Table.Transpose", fn("Table.Transpose", [{ name: "table" }, { name: "columns", optional: true }], (a) => {
     const t = asTable(a[0]!, "Table.Transpose");
     const width = t.rows.length;

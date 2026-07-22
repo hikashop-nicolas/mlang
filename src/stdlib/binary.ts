@@ -45,6 +45,11 @@ export function registerBinary(env: Env): void {
     return text(encName(a[1]) === "Hex" ? bytesToHex(bytes) : bytesToB64(bytes));
   }));
   def("Binary.Length", fn("Binary.Length", [{ name: "binary" }], (a) => number(toBytes(a[0]!, "Binary.Length").length)));
+  def("Binary.FromList", fn("Binary.FromList", [{ name: "list" }], (a) => {
+    if (a[0]!.kind !== "list") err("Expression.Error", "Binary.FromList: expected a list of byte values.");
+    return binary(Uint8Array.from(a[0]!.items.map((v) => (v.kind === "number" ? v.value & 0xff : 0))));
+  }));
+  def("Binary.ToList", fn("Binary.ToList", [{ name: "binary" }], (a) => ({ kind: "list", items: Array.from(toBytes(a[0]!, "Binary.ToList"), (b) => number(b)) })));
 
   // Binary.Decompress(binary, compression): Compression.None(0)/GZip(1)/Deflate(2). Excel's
   // "Deflate" is raw DEFLATE (no zlib header), which fflate's inflateSync expects.

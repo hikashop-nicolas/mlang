@@ -128,6 +128,23 @@ export function registerList(env: Env): void {
   }));
 
   def("List.IsEmpty", fn("List.IsEmpty", [{ name: "list" }], (a) => logical(listOf(a[0]!, "List.IsEmpty").length === 0)));
+  def("List.Repeat", fn("List.Repeat", [{ name: "list" }, { name: "count" }], (a) => {
+    const items = listOf(a[0]!, "List.Repeat");
+    const out: MValue[] = [];
+    for (let i = 0; i < numOf(a[1]!, "count"); i++) out.push(...items);
+    return list(out);
+  }));
+  def("List.Positions", fn("List.Positions", [{ name: "list" }], (a) => list(listOf(a[0]!, "List.Positions").map((_, i) => number(i)))));
+  def("List.Single", fn("List.Single", [{ name: "list" }], (a) => {
+    const items = listOf(a[0]!, "List.Single");
+    if (items.length !== 1) err("Expression.Error", "List.Single: the list does not have exactly one item.");
+    return items[0]!;
+  }));
+  def("List.SingleOrDefault", fn("List.SingleOrDefault", [{ name: "list" }, { name: "default", optional: true }], (a) => {
+    const items = listOf(a[0]!, "List.SingleOrDefault");
+    if (items.length > 1) err("Expression.Error", "List.SingleOrDefault: the list has more than one item.");
+    return items[0] ?? a[1] ?? NULL;
+  }));
   def("List.AnyTrue", fn("List.AnyTrue", [{ name: "list" }], (a) => logical(listOf(a[0]!, "List.AnyTrue").some(truthy))));
   def("List.AllTrue", fn("List.AllTrue", [{ name: "list" }], (a) => logical(listOf(a[0]!, "List.AllTrue").every(truthy))));
   def("List.Product", numericFold("List.Product", (ns) => ns.reduce((p, x) => p * x, 1)));

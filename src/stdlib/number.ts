@@ -38,6 +38,30 @@ export function registerNumber(env: Env): void {
     return v.kind === "number" ? number(roundToEven(v.value, 0)) : v;
   }));
 
+  const unary = (name: string, f: (x: number) => number): void => def(name, nn(name, [{ name: "number" }], (a) => number(f(numOf(a[0]!, name)))));
+  unary("Number.Exp", Math.exp);
+  unary("Number.Ln", Math.log);
+  unary("Number.Log10", Math.log10);
+  unary("Number.Sin", Math.sin);
+  unary("Number.Cos", Math.cos);
+  unary("Number.Tan", Math.tan);
+  unary("Number.Asin", Math.asin);
+  unary("Number.Acos", Math.acos);
+  unary("Number.Atan", Math.atan);
+  unary("Number.Sinh", Math.sinh);
+  unary("Number.Cosh", Math.cosh);
+  unary("Number.Tanh", Math.tanh);
+  def("Number.Log", nn("Number.Log", [{ name: "number" }, { name: "base", optional: true }], (a) => number(Math.log(numOf(a[0]!, "Number.Log")) / Math.log(a[1] && a[1].kind === "number" ? a[1].value : 10))));
+  def("Number.Atan2", fn("Number.Atan2", [{ name: "y" }, { name: "x" }], (a) => number(Math.atan2(numOf(a[0]!, "Number.Atan2"), numOf(a[1]!, "Number.Atan2")))));
+  def("Number.Factorial", nn("Number.Factorial", [{ name: "number" }], (a) => { let n = Math.round(numOf(a[0]!, "Number.Factorial")); let r = 1; for (; n > 1; n--) r *= n; return number(r); }));
+  const bit = (name: string, f: (a: number, b: number) => number): void => def(name, fn(name, [{ name: "number1" }, { name: "number2" }], (a) => number(f(numOf(a[0]!, name), numOf(a[1]!, name)))));
+  bit("Number.BitwiseAnd", (x, y) => x & y);
+  bit("Number.BitwiseOr", (x, y) => x | y);
+  bit("Number.BitwiseXor", (x, y) => x ^ y);
+  bit("Number.BitwiseShiftLeft", (x, y) => x * 2 ** y);
+  bit("Number.BitwiseShiftRight", (x, y) => Math.floor(x / 2 ** y));
+  def("Number.BitwiseNot", nn("Number.BitwiseNot", [{ name: "number" }], (a) => number(~numOf(a[0]!, "Number.BitwiseNot"))));
+
   def("Number.Abs", nn("Number.Abs", [{ name: "number" }], (a) => number(Math.abs(numOf(a[0]!, "Number.Abs")))));
   def("Number.Sign", nn("Number.Sign", [{ name: "number" }], (a) => number(Math.sign(numOf(a[0]!, "Number.Sign")))));
   def("Number.Sqrt", nn("Number.Sqrt", [{ name: "number" }], (a) => number(Math.sqrt(numOf(a[0]!, "Number.Sqrt")))));
