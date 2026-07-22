@@ -5,6 +5,22 @@ import { evaluate, toJS } from "./index.js";
 // parameters/return, typed record fields, open/closed records, table keys, and facets.
 const js = async (m: string): Promise<unknown> => toJS(await evaluate(m));
 
+describe("type system: `as` ascription is enforced", () => {
+  it("returns the value when it conforms", async () => {
+    expect(await js(`1 as number`)).toBe(1);
+    expect(await js(`"x" as text`)).toBe("x");
+    expect(await js(`1 as any`)).toBe(1);
+    expect(await js(`1 as nullable number`)).toBe(1);
+    expect(await js(`null as nullable number`)).toBe(null);
+  });
+  it("raises when the value does not conform", async () => {
+    await expect(js(`"x" as number`)).rejects.toThrow(/cannot convert/i);
+    await expect(js(`1 as text`)).rejects.toThrow(/cannot convert/i);
+    await expect(js(`null as number`)).rejects.toThrow(/cannot convert/i); // number is not nullable
+    expect(await js(`try (1 as text) otherwise "bad"`)).toBe("bad");
+  });
+});
+
 describe("type system: function types", () => {
   it("parameters, return, required count (matches the reference examples)", async () => {
     expect(await js(`Record.FieldNames(Type.FunctionParameters(type function (x as number, y as text) as any))`)).toEqual(["x", "y"]);

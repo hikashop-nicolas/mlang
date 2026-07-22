@@ -283,9 +283,15 @@ export function evalNode(n: Node, env: Env): MValue {
       if (l.kind === "null" || r.kind === "null") return NULL;
       return logical(expectLogical(l) || expectLogical(r));
     }
-    case "AsExpression":
-      // Tier 0: type ascription is a pass-through (FIDELITY: no runtime assert yet).
-      return evalNode(child(n, "left"), env);
+    case "AsExpression": {
+      // `value as type` asserts conformance at runtime and raises when it fails (spec), using
+      // the same compatibility as `is`. The `as` grammar restricts the RHS to a primitive type.
+      const v = evalNode(child(n, "left"), env);
+      if (v.kind === "error") throw v.error;
+      const t = structuredType(child(n, "right"));
+      if (!valueMatchesType(v, t)) err("Expression.Error", `We cannot convert a value of type ${v.kind} to type ${t.ascription ?? t.name}.`);
+      return v;
+    }
     case "IsExpression": {
       const v = evalNode(child(n, "left"), env);
       return logical(valueMatchesType(v, structuredType(child(n, "right"))));
