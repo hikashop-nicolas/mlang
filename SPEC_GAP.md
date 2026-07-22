@@ -104,9 +104,22 @@ EWKT `SRID=n;` prefixes round-trip. Validated by `src/geo.test.ts` + the `geo` o
 Geography.FromWellKnownText, Geography.ToWellKnownText, GeographyPoint.From,
 Geometry.FromWellKnownText, Geometry.ToWellKnownText, GeometryPoint.From.
 
+## Fuzzy matching — implemented best-effort (2026-07-22)
+
+`Table.FuzzyJoin`, `Table.FuzzyNestedJoin`, `Table.FuzzyGroup`, `Table.AddFuzzyClusterColumn`
+in `src/stdlib/fuzzy.ts`. Excel's real scorer is proprietary (documented as "Jaccard" but it
+is order-sensitive, so not any published set-based Jaccard). This uses **normalized Levenshtein
+similarity** (`1 - editDistance/maxLen`), which reproduces every reference example
+(Grapes/Graes 0.833, Seattle/Seatle 0.857, Vancouver/vancover 0.889, Robert/Bob 0.33) and both
+full documented worked examples verbatim. All documented options are honoured (Threshold default
+0.80, IgnoreCase/IgnoreSpace default true, TransformationTable, SimilarityColumnName,
+NumberOfMatches, JoinKind). **Caveat:** borderline similarity scores may differ from Excel's
+exact scorer, so groupings can differ on ambiguous inputs; the documented cases match. Validated
+by `src/fuzzy.test.ts` + the `fuzzy` oracle case.
+
 ---
 
-**All three tiers complete.** Every standard M function from the reference diff is now
+**All three tiers complete + fuzzy.** Every standard M function from the reference diff is now
 implemented except the intentionally-skipped folding/partition/query-plan and internal-use-only
 entries.
 

@@ -18,6 +18,7 @@ import { registerConnectors } from "./connectors.js";
 import { registerWorkbook } from "./workbook.js";
 import { registerXml } from "./xml.js";
 import { registerGeo } from "./geo.js";
+import { registerFuzzy } from "./fuzzy.js";
 
 export function registerStdlib(env: Env): void {
   registerConstants(env);
@@ -33,6 +34,7 @@ export function registerStdlib(env: Env): void {
   registerWorkbook(env);
   registerXml(env);
   registerGeo(env);
+  registerFuzzy(env);
   registerConnectors(env);
 
   // Error.Record: the constructor used by `error Error.Record(...)`.
