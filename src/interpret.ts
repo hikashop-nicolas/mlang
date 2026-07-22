@@ -3,7 +3,7 @@
 // propagate until try...otherwise; null propagates through arithmetic; three-valued and/or.
 // The parser AST is consumed structurally (one place to adapt if its shape changes).
 
-import { MError, NULL, date, datetime, datetimezone, duration, err, equals, compare, logical, number, raiseIfError, text, time, rowRecord, type MFunction, type MType, type MValue } from "./values.js";
+import { MError, NULL, bigOf, date, datetime, datetimezone, duration, err, equals, compare, intValue, logical, number, raiseIfError, text, time, rowRecord, type MFunction, type MType, type MValue } from "./values.js";
 import { civilFromDays, daysFromCivil } from "./temporal.js";
 import { valueMatchesType } from "./types.js";
 
@@ -104,7 +104,7 @@ export function evalNode(n: Node, env: Env): MValue {
     case "LiteralExpression": {
       const raw = n.literal as string;
       switch (n.literalKind) {
-        case "Numeric": return number(Number(raw));
+        case "Numeric": return /^-?\d+$/.test(raw) && !Number.isSafeInteger(Number(raw)) ? intValue(BigInt(raw)) : number(Number(raw));
         case "Text": return text(decodeTextLiteral(raw));
         case "Logical": return logical(raw === "true");
         case "Null": return NULL;
@@ -422,6 +422,15 @@ function arithmetic(n: Node, env: Env): MValue {
 
   const a = expectNumber(l);
   const b = expectNumber(r);
+  // Exact-integer path (kept only once a BigInt shadow is present, so normal arithmetic is
+  // untouched): +/-/* on two integers stay exact past 2^53.
+  if ((op === "+" || op === "-" || op === "*") && l.kind === "number" && r.kind === "number" && (l.big !== undefined || r.big !== undefined)) {
+    const bl = bigOf(l), br = bigOf(r);
+    if (bl !== null && br !== null) {
+      const res = op === "+" ? bl + br : op === "-" ? bl - br : bl * br;
+      return Number.isSafeInteger(Number(res)) ? number(Number(res)) : intValue(res);
+    }
+  }
   switch (op) {
     case "+": return number(a + b);
     case "-": return number(a - b);

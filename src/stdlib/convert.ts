@@ -1,5 +1,5 @@
 // Value conversions shared by Text.From / Number.From / Table.TransformColumnTypes.
-import { NULL, date, datetime, err, logical, number, text, time, type MValue } from "../values.js";
+import { NULL, date, datetime, err, intValue, logical, number, text, time, type MValue } from "../values.js";
 import { dateTimeToSerial, formatOffset, parseDateTimeText, parseDateText, serialToDateTime, usDate, usDateTime, usTimeShort } from "../temporal.js";
 import { cultureOf, parseNumberCulture, type Culture } from "../culture.js";
 
@@ -13,7 +13,7 @@ export const numToText = (n: number): string => {
 export function textFrom(v: MValue): string {
   switch (v.kind) {
     case "text": return v.value;
-    case "number": return numToText(v.value);
+    case "number": return v.big !== undefined ? v.big.toString() : numToText(v.value);
     case "logical": return v.value ? "true" : "false";
     case "date": return usDate(v.y, v.m, v.d);
     case "time": return usTimeShort(v.secs);
@@ -35,6 +35,8 @@ export function numberFrom(v: MValue, culture?: Culture): MValue {
   if (v.kind === "duration") return number(v.secs / 86400); // total days
   if (v.kind === "text") {
     const t = v.value.trim();
+    // Preserve an exact integer beyond 2^53 (e.g. a 64-bit ID) with a BigInt shadow.
+    if (/^-?\d+$/.test(t) && !Number.isSafeInteger(Number(t))) return intValue(BigInt(t));
     const n = parseNumberCulture(t, culture ?? cultureOf(null));
     if (t === "" || Number.isNaN(n)) err("Expression.Error", `Number.From: cannot convert "${v.value}" to a number.`);
     return number(n);

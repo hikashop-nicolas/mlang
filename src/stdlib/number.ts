@@ -69,7 +69,8 @@ export function registerNumber(env: Env): void {
   // Int64.From: convert then round to a whole number (banker's rounding, oracle-checked).
   def("Int64.From", fn("Int64.From", [{ name: "value" }, { name: "culture", optional: true }], (a) => {
     const v = numberFrom(a[0]!, cultureOf(a[1]?.kind === "text" ? a[1].value : null));
-    return v.kind === "number" ? number(roundToEven(v.value, 0)) : v;
+    if (v.kind !== "number") return v;
+    return v.big !== undefined ? v : number(roundToEven(v.value, 0)); // keep an exact 64-bit integer
   }));
 
   const unary = (name: string, f: (x: number) => number): void => def(name, nn(name, [{ name: "number" }], (a) => number(f(numOf(a[0]!, name)))));
@@ -158,9 +159,10 @@ export function registerNumber(env: Env): void {
   def("Number.IsNaN", fn("Number.IsNaN", [{ name: "number" }], (a) => ({ kind: "logical", value: a[0]!.kind === "number" && Number.isNaN(a[0]!.value) })));
   def("Number.ToText", nn("Number.ToText", [{ name: "number" }, { name: "format", optional: true }, { name: "culture", optional: true }], (a) => {
     const v = numOf(a[0]!, "Number.ToText");
+    const big = a[0]!.kind === "number" ? a[0]!.big : undefined;
     const f = a[1];
     const c = cultureOf(a[2]?.kind === "text" ? a[2].value : null);
-    if (!f || f.kind === "null") return { kind: "text", value: isInvariant(c) ? String(v) : String(v).replace(".", numberSeparators(c).decimal) };
+    if (!f || f.kind === "null") { const s = big !== undefined ? big.toString() : String(v); return { kind: "text", value: isInvariant(c) ? s : s.replace(".", numberSeparators(c).decimal) }; }
     if (f.kind !== "text") err("Expression.Error", "Number.ToText: format must be text.");
     try {
       const sep = numberSeparators(c);

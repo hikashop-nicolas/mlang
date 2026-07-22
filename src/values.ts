@@ -5,7 +5,7 @@
 export type MValue =
   | { kind: "null" }
   | { kind: "logical"; value: boolean }
-  | { kind: "number"; value: number }
+  | { kind: "number"; value: number; big?: bigint } // `big` shadows exact integers beyond 2^53
   | { kind: "text"; value: string }
   | { kind: "date"; y: number; m: number; d: number }
   | { kind: "time"; secs: number } // seconds since midnight (fractional)
@@ -70,6 +70,12 @@ export const TRUE: MValue = { kind: "logical", value: true };
 export const FALSE: MValue = { kind: "logical", value: false };
 export const logical = (v: boolean): MValue => (v ? TRUE : FALSE);
 export const number = (v: number): MValue => ({ kind: "number", value: v });
+/** An exact integer that may exceed 2^53: keeps a BigInt shadow for equality/compare/text so
+    64-bit keys survive joins, dedup and rendering even though `value` (a double) is lossy. */
+export const intValue = (b: bigint): MValue => ({ kind: "number", value: Number(b), big: b });
+/** The exact BigInt for an integer-valued number (the shadow, or a safe integer), else null. */
+export const bigOf = (v: Extract<MValue, { kind: "number" }>): bigint | null =>
+  v.big ?? (Number.isInteger(v.value) && Number.isSafeInteger(v.value) ? BigInt(v.value) : null);
 export const text = (v: string): MValue => ({ kind: "text", value: v });
 export const list = (items: MValue[]): MValue => ({ kind: "list", items });
 export const date = (y: number, m: number, d: number): MValue => ({ kind: "date", y, m, d });
@@ -114,7 +120,11 @@ export function equals(a: MValue, b: MValue): boolean {
   switch (a.kind) {
     case "null": return true;
     case "logical": return a.value === (b as typeof a).value;
-    case "number": return a.value === (b as typeof a).value;
+    case "number": {
+      const bn = b as typeof a;
+      if (a.big !== undefined || bn.big !== undefined) { const ba = bigOf(a), bb = bigOf(bn); if (ba !== null && bb !== null) return ba === bb; }
+      return a.value === bn.value;
+    }
     case "text": return a.value === (b as typeof a).value;
     case "date": {
       const bd = b as typeof a;
@@ -163,7 +173,11 @@ export function equals(a: MValue, b: MValue): boolean {
 export function compare(a: MValue, b: MValue): number {
   if (a.kind === "null" || b.kind === "null") err("Expression.Error", "Cannot compare null values");
   if (a.kind !== b.kind) err("Expression.Error", `Cannot compare ${a.kind} with ${b.kind}`);
-  if (a.kind === "number") return a.value - (b as typeof a).value;
+  if (a.kind === "number") {
+    const bn = b as typeof a;
+    if (a.big !== undefined || bn.big !== undefined) { const ba = bigOf(a), bb = bigOf(bn); if (ba !== null && bb !== null) return ba < bb ? -1 : ba > bb ? 1 : 0; }
+    return a.value - bn.value;
+  }
   if (a.kind === "text") return a.value < (b as typeof a).value ? -1 : a.value > (b as typeof a).value ? 1 : 0;
   if (a.kind === "logical") return Number(a.value) - Number((b as typeof a).value);
   if (a.kind === "date" || a.kind === "datetime") {

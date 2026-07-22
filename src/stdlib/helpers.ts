@@ -47,7 +47,7 @@ export const colIndex = (t: Table, c: string): number => {
 
 /** Sort comparison for same-kind primitives (raises on mixed/other kinds). */
 export const cmpForSort = (a: MValue, b: MValue): number => {
-  if (a.kind === "number" && b.kind === "number") return a.value - b.value;
+  if (a.kind === "number" && b.kind === "number") return (a.big !== undefined || b.big !== undefined) ? compare(a, b) : a.value - b.value;
   if (a.kind === "text" && b.kind === "text") return a.value < b.value ? -1 : a.value > b.value ? 1 : 0;
   if (a.kind === "logical" && b.kind === "logical") return Number(a.value) - Number(b.value);
   return compare(a, b);
