@@ -92,10 +92,24 @@ Known shallow spots (pending oracle): Type.Facets returns an empty record for bu
 types (facets aren't tracked, only round-tripped through ReplaceFacets); Type.Union widens
 any mixed set to `any` rather than forming a true union type.
 
-## Tier 3 - geography / geometry WKT (niche but real) (6)
+## Tier 3 - geography / geometry WKT (6) — DONE (2026-07-22)
+
+Implemented in `src/stdlib/geo.ts` (a self-contained WKT parser + serializer). Record shapes
+confirmed against Microsoft docs + Chris Webb's reference examples: POINT is
+`[Kind="POINT", Longitude/Latitude (geo) | X/Y (geom)]` with Z/M/SRID omitted at defaults
+(default SRID 4326 geo / 0 geom); LINESTRING uses `Points`; POLYGON uses `Rings` holding
+LINESTRING records; MULTIPOINT/MULTILINESTRING/MULTIPOLYGON/GEOMETRYCOLLECTION use `Components`.
+EWKT `SRID=n;` prefixes round-trip. Validated by `src/geo.test.ts` + the `geo` oracle case.
 
 Geography.FromWellKnownText, Geography.ToWellKnownText, GeographyPoint.From,
 Geometry.FromWellKnownText, Geometry.ToWellKnownText, GeometryPoint.From.
+
+---
+
+**All three tiers complete.** Every standard M function from the reference diff is now
+implemented except the intentionally-skipped folding/partition/query-plan and internal-use-only
+entries. Remaining known-shallow spots (all oracle-pending, all niche): RankKind/PercentileMode
+enum numeric values, Type.Facets for built-ins, Type.Union widening.
 
 ## Intentionally skipped - folding / partition / query-plan (no client-side meaning)
 
