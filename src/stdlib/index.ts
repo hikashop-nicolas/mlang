@@ -12,6 +12,7 @@ import { registerRecord } from "./record.js";
 import { registerDateTime } from "./datetime.js";
 import { registerDocument } from "./document.js";
 import { registerBinary } from "./binary.js";
+import { registerBinaryFormat } from "./binaryformat.js";
 import { registerConnectors } from "./connectors.js";
 import { registerWorkbook } from "./workbook.js";
 import { registerXml } from "./xml.js";
@@ -26,6 +27,7 @@ export function registerStdlib(env: Env): void {
   registerDateTime(env);
   registerDocument(env);
   registerBinary(env);
+  registerBinaryFormat(env);
   registerWorkbook(env);
   registerXml(env);
   registerConnectors(env);

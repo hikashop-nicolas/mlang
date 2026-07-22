@@ -30,6 +30,8 @@ export function registerConstants(env: Env): void {
   def("Occurrence.First", N(0));
   def("Occurrence.Last", N(1));
   def("Occurrence.All", N(2));
+  def("ByteOrder.BigEndian", N(0));
+  def("ByteOrder.LittleEndian", N(1));
   def("QuoteStyle.None", N(0));
   def("QuoteStyle.Csv", N(1));
   def("RoundingMode.Up", N(0));
