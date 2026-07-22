@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { evaluate, toJS } from "./index.js";
 
 const js = async (m: string): Promise<unknown> => toJS(await evaluate(m));
+const jsHost = async (m: string, host: Record<string, unknown>): Promise<unknown> => toJS(await evaluate(m, host as never));
 
 describe("coverage batch: Lines / Json / Uri / Binary", () => {
   it("Lines.FromBinary splits decoded bytes into lines", async () => {
@@ -71,5 +72,15 @@ describe("coverage batch: List / Table / Value", () => {
   });
   it("Splitter.SplitTextByRepeatedLengths", async () => {
     expect(await js(`Splitter.SplitTextByRepeatedLengths({2})("aabbcc")`)).toEqual(["aa", "bb", "cc"]);
+  });
+  it("Function.From builds a variadic function", async () => {
+    expect(await js(`Function.From(type function() as list, each List.Count(_))("a", "b", "c")`)).toBe(3);
+    expect(await js(`Function.From(type function() as number, each List.Sum(_))(1, 2, 3, 4)`)).toBe(10);
+  });
+  it("Culture.Current is a culture string, defaulted from the runtime and host-overridable", async () => {
+    expect(typeof (await js(`Culture.Current`))).toBe("string");
+    expect((await js(`Culture.Current`)) as string).toMatch(/^[a-z]{2}(-[A-Za-z]+)?$/);
+    expect(await jsHost(`Culture.Current`, { "Culture.Current": { kind: "text", value: "ja-JP" } })).toBe("ja-JP");
+    expect(await js(`Text.Lower("ABC", Culture.Current)`)).toBe("abc");
   });
 });

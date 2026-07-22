@@ -2,10 +2,11 @@
 // DateTime.* / Duration.* Tier-1 subset. Semantics from the public reference; the date
 // arithmetic edge cases are oracle-pinned.
 import type { Env } from "../interpret.js";
-import { NULL, date, datetime, datetimezone, duration, err, number, text, time, type MValue } from "../values.js";
+import { NULL, date, datetime, datetimezone, duration, err, logical, number, text, time, type MValue } from "../values.js";
 import { END_OF_DAY_SECS, addMonths, civilFromDays, dateTimeToSerial, dayOfWeekSunday0, daysFromCivil, daysInMonth, parseDateTimeText, parseDateTimeZoneText, parseDateText, serialToDateTime, usDate, usDateTime, usTimeShort } from "../temporal.js";
 import { cultureOf, parseDateCulture } from "../culture.js";
 import { fn, numOf } from "./helpers.js";
+import { currentClockMs, currentOffsetMinutes } from "../async-runtime.js";
 import { formatCustom, standardDateTimePattern } from "../format.js";
 
 type DateV = Extract<MValue, { kind: "date" }>;
@@ -39,6 +40,15 @@ const asDateish = (v: MValue, who: string): { y: number; m: number; d: number; s
   if (v.kind === "datetime" || v.kind === "datetimezone") return { y: v.y, m: v.m, d: v.d, secs: v.secs };
   err("Expression.Error", `${who}: expected a date or datetime, got ${v.kind}.`);
 };
+
+interface NowFields { y: number; mo: number; day: number; secs: number }
+/** Wall-clock fields of the run's fixed instant shifted by an offset (minutes east of UTC). */
+function nowFieldsAt(offsetMin: number): NowFields {
+  const d = new Date(currentClockMs() + offsetMin * 60000);
+  return { y: d.getUTCFullYear(), mo: d.getUTCMonth() + 1, day: d.getUTCDate(), secs: d.getUTCHours() * 3600 + d.getUTCMinutes() * 60 + d.getUTCSeconds() + d.getUTCMilliseconds() / 1000 };
+}
+const localNowFields = (): NowFields => nowFieldsAt(currentOffsetMinutes());
+const utcNowFields = (): NowFields => nowFieldsAt(0);
 
 export function registerDateTime(env: Env): void {
   const def = (name: string, v: MValue): void => env.defineValue(name, v);
@@ -207,7 +217,48 @@ export function registerDateTime(env: Env): void {
   def("Date.EndOfMonth", nn("Date.EndOfMonth", [{ name: "date" }], (a) => keepKind(a[0]!, (d) => ({ ...d, d: daysInMonth(d.y, d.m) }), false)));
   def("Date.StartOfYear", nn("Date.StartOfYear", [{ name: "date" }], (a) => keepKind(a[0]!, (d) => ({ y: d.y, m: 1, d: 1 }), true)));
   def("Date.EndOfYear", nn("Date.EndOfYear", [{ name: "date" }], (a) => keepKind(a[0]!, (d) => ({ y: d.y, m: 12, d: 31 }), false)));
-  def("Date.IsInCurrentMonth", nn("Date.IsInCurrentMonth", [{ name: "date" }], () => err("Expression.Error", "mlang: clock-dependent Date functions are not supported (deterministic engine).")));
+  // --- Relative-date family (clock-dependent) -----------------------------------------
+  // "Today" is the local date of the run's fixed clock. Previous/Next exclude the current
+  // period; the NDays/NWeeks/... forms cover N whole periods ending/starting adjacent to it.
+  const todayDn = (): number => { const f = localNowFields(); return daysFromCivil(f.y, f.mo, f.day); };
+  const dnOf = (v: MValue, who: string): number => { const d = asDateish(v, who); return daysFromCivil(d.y, d.m, d.d); };
+  const weekStart = (dn: number): number => dn - dayOfWeekSunday0(dn); // most recent Sunday
+  const monthIdx = (v: MValue, who: string): number => { const d = asDateish(v, who); return d.y * 12 + (d.m - 1); };
+  const todayMonthIdx = (): number => { const f = localNowFields(); return f.y * 12 + (f.mo - 1); };
+  const quarterIdx = (v: MValue, who: string): number => { const d = asDateish(v, who); return d.y * 4 + Math.ceil(d.m / 3) - 1; };
+  const todayQuarterIdx = (): number => { const f = localNowFields(); return f.y * 4 + Math.ceil(f.mo / 3) - 1; };
+  const yearOf = (v: MValue, who: string): number => asDateish(v, who).y;
+  const rel = (name: string, test: (v: MValue) => boolean): void =>
+    def(name, nn(name, [{ name: "dateTime" }], (a) => logical(test(a[0]!))));
+  const relN = (name: string, test: (v: MValue, n: number) => boolean): void =>
+    def(name, nn(name, [{ name: "dateTime" }, { name: "count" }], (a) => logical(test(a[0]!, numOf(a[1]!, name)))));
+
+  rel("Date.IsInCurrentDay", (v) => dnOf(v, "Date.IsInCurrentDay") === todayDn());
+  rel("Date.IsInPreviousDay", (v) => dnOf(v, "Date.IsInPreviousDay") === todayDn() - 1);
+  rel("Date.IsInNextDay", (v) => dnOf(v, "Date.IsInNextDay") === todayDn() + 1);
+  rel("Date.IsInCurrentWeek", (v) => weekStart(dnOf(v, "Date.IsInCurrentWeek")) === weekStart(todayDn()));
+  rel("Date.IsInPreviousWeek", (v) => weekStart(dnOf(v, "Date.IsInPreviousWeek")) === weekStart(todayDn()) - 7);
+  rel("Date.IsInNextWeek", (v) => weekStart(dnOf(v, "Date.IsInNextWeek")) === weekStart(todayDn()) + 7);
+  rel("Date.IsInCurrentMonth", (v) => monthIdx(v, "Date.IsInCurrentMonth") === todayMonthIdx());
+  rel("Date.IsInPreviousMonth", (v) => monthIdx(v, "Date.IsInPreviousMonth") === todayMonthIdx() - 1);
+  rel("Date.IsInNextMonth", (v) => monthIdx(v, "Date.IsInNextMonth") === todayMonthIdx() + 1);
+  rel("Date.IsInCurrentQuarter", (v) => quarterIdx(v, "Date.IsInCurrentQuarter") === todayQuarterIdx());
+  rel("Date.IsInPreviousQuarter", (v) => quarterIdx(v, "Date.IsInPreviousQuarter") === todayQuarterIdx() - 1);
+  rel("Date.IsInNextQuarter", (v) => quarterIdx(v, "Date.IsInNextQuarter") === todayQuarterIdx() + 1);
+  rel("Date.IsInCurrentYear", (v) => yearOf(v, "Date.IsInCurrentYear") === localNowFields().y);
+  rel("Date.IsInPreviousYear", (v) => yearOf(v, "Date.IsInPreviousYear") === localNowFields().y - 1);
+  rel("Date.IsInNextYear", (v) => yearOf(v, "Date.IsInNextYear") === localNowFields().y + 1);
+  rel("Date.IsInYearToDate", (v) => { const dn = dnOf(v, "Date.IsInYearToDate"); const f = localNowFields(); return yearOf(v, "Date.IsInYearToDate") === f.y && dn <= todayDn(); });
+  relN("Date.IsInPreviousNDays", (v, n) => { const dn = dnOf(v, "Date.IsInPreviousNDays"), t = todayDn(); return dn >= t - n && dn <= t - 1; });
+  relN("Date.IsInNextNDays", (v, n) => { const dn = dnOf(v, "Date.IsInNextNDays"), t = todayDn(); return dn >= t + 1 && dn <= t + n; });
+  relN("Date.IsInPreviousNWeeks", (v, n) => { const w = weekStart(dnOf(v, "Date.IsInPreviousNWeeks")), t = weekStart(todayDn()); return w >= t - 7 * n && w <= t - 7; });
+  relN("Date.IsInNextNWeeks", (v, n) => { const w = weekStart(dnOf(v, "Date.IsInNextNWeeks")), t = weekStart(todayDn()); return w >= t + 7 && w <= t + 7 * n; });
+  relN("Date.IsInPreviousNMonths", (v, n) => { const mi = monthIdx(v, "Date.IsInPreviousNMonths"), t = todayMonthIdx(); return mi >= t - n && mi <= t - 1; });
+  relN("Date.IsInNextNMonths", (v, n) => { const mi = monthIdx(v, "Date.IsInNextNMonths"), t = todayMonthIdx(); return mi >= t + 1 && mi <= t + n; });
+  relN("Date.IsInPreviousNQuarters", (v, n) => { const q = quarterIdx(v, "Date.IsInPreviousNQuarters"), t = todayQuarterIdx(); return q >= t - n && q <= t - 1; });
+  relN("Date.IsInNextNQuarters", (v, n) => { const q = quarterIdx(v, "Date.IsInNextNQuarters"), t = todayQuarterIdx(); return q >= t + 1 && q <= t + n; });
+  relN("Date.IsInPreviousNYears", (v, n) => { const y = yearOf(v, "Date.IsInPreviousNYears"), t = localNowFields().y; return y >= t - n && y <= t - 1; });
+  relN("Date.IsInNextNYears", (v, n) => { const y = yearOf(v, "Date.IsInNextNYears"), t = localNowFields().y; return y >= t + 1 && y <= t + n; });
   def("Date.ToText", nn("Date.ToText", [{ name: "date" }, { name: "format", optional: true }, { name: "culture", optional: true }], (a) => {
     const d = asDateish(a[0]!, "Date.ToText");
     const f = formatArg(a[1]);
@@ -276,8 +327,11 @@ export function registerDateTime(env: Env): void {
     if (f !== null) return text(applyDateTimeFormat(f, { y: v.y, mo: v.m, d: v.d, secs: v.secs }, { date: true, time: true }));
     return text(usDateTime(v.y, v.m, v.d, v.secs));
   }));
-  def("DateTime.LocalNow", fn("DateTime.LocalNow", [], () => err("Expression.Error", "mlang: DateTime.LocalNow is not supported (deterministic engine).")));
-  def("DateTime.FixedLocalNow", fn("DateTime.FixedLocalNow", [], () => err("Expression.Error", "mlang: DateTime.FixedLocalNow is not supported (deterministic engine).")));
+  // "Now" is the run's fixed clock (Excel fixes it once per refresh). Local uses the run's
+  // captured timezone offset; both LocalNow and FixedLocalNow return that same fixed instant.
+  const localNow = (): MValue => { const f = localNowFields(); return datetime(f.y, f.mo, f.day, f.secs); };
+  def("DateTime.LocalNow", fn("DateTime.LocalNow", [], localNow));
+  def("DateTime.FixedLocalNow", fn("DateTime.FixedLocalNow", [], localNow));
 
   // --- DateTimeZone.* ----------------------------------------------------------------
   def("#datetimezone", fn("#datetimezone", [{ name: "year" }, { name: "month" }, { name: "day" }, { name: "hour" }, { name: "minute" }, { name: "second" }, { name: "offsetHours" }, { name: "offsetMinutes" }], (a) => {
@@ -317,7 +371,10 @@ export function registerDateTime(env: Env): void {
     return shiftZone(v, target);
   }));
   def("DateTimeZone.ToLocal", nn("DateTimeZone.ToLocal", [{ name: "dateTimeZone" }], () => err("Expression.Error", "mlang: DateTimeZone.ToLocal needs a local zone (deterministic engine).")));
-  for (const now of ["DateTimeZone.UtcNow", "DateTimeZone.LocalNow", "DateTimeZone.FixedUtcNow", "DateTimeZone.FixedLocalNow"]) def(now, fn(now, [], () => err("Expression.Error", `mlang: ${now} is not supported (deterministic engine).`)));
+  const utcNow = (): MValue => { const f = utcNowFields(); return datetimezone(f.y, f.mo, f.day, f.secs, 0); };
+  const localNowZ = (): MValue => { const f = localNowFields(); return datetimezone(f.y, f.mo, f.day, f.secs, currentOffsetMinutes()); };
+  for (const now of ["DateTimeZone.UtcNow", "DateTimeZone.FixedUtcNow"]) def(now, fn(now, [], utcNow));
+  for (const now of ["DateTimeZone.LocalNow", "DateTimeZone.FixedLocalNow"]) def(now, fn(now, [], localNowZ));
 
   // --- Duration.* --------------------------------------------------------------------
   def("Duration.From", nn("Duration.From", [{ name: "value" }], (a) => {

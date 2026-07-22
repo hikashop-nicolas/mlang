@@ -57,6 +57,38 @@ export function asyncConnector(name: string, resolve: (args: MValue[]) => Promis
   };
 }
 
+// --- Per-evaluation clock and RNG ------------------------------------------------------
+// Clock/random functions (DateTime.LocalNow, Number.Random, the relative-date family) are
+// non-deterministic, but "now" is FIXED once per evaluation (Excel refresh semantics) and the
+// RNG is reseeded to the same seed at the start of every replay round, so a query that also
+// pulls a connector reproduces identical clock/random values across passes.
+let clockMs: number | null = null;
+let clockOffsetMin: number | null = null;
+let rng: (() => number) | null = null;
+
+/** The fixed wall-clock instant (ms since epoch) for the current run; live clock outside one. */
+export function currentClockMs(): number {
+  return clockMs ?? Date.now();
+}
+/** Local timezone offset in minutes (east-of-UTC positive), fixed for the current run. */
+export function currentOffsetMinutes(): number {
+  return clockOffsetMin ?? -new Date().getTimezoneOffset();
+}
+/** Next pseudo-random in [0,1); seeded per run for replay reproducibility, else Math.random. */
+export function nextRandom(): number {
+  return rng ? rng() : Math.random();
+}
+// mulberry32: a tiny, fast, well-distributed 32-bit PRNG (public-domain algorithm).
+function makeRng(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 const MAX_ROUNDS = 128;
 
 /** Run a synchronous evaluation, resolving async connectors AND Expression.Evaluate parses by
@@ -66,9 +98,21 @@ export async function runWithConnectors(build: () => MValue, parse?: (source: st
   const parseCache = new Map<string, { ast: unknown } | { err: MError }>();
   const prevC = currentCache;
   const prevP = currentParseCache;
+  // Fix the clock once for this run (nested runs inherit the outer instant); reseed the RNG
+  // to this seed at the start of every round so replay reproduces the same random sequence.
+  const prevClock = clockMs;
+  const prevOffset = clockOffsetMin;
+  const prevRng = rng;
+  if (clockMs === null) {
+    clockMs = Date.now();
+    clockOffsetMin = -new Date().getTimezoneOffset();
+  }
+  const seed = (clockMs ^ 0x9e3779b9) >>> 0;
+  try {
   for (let round = 0; round < MAX_ROUNDS; round++) {
     currentCache = cache;
     currentParseCache = parseCache;
+    rng = makeRng(seed);
     let pendingConn: PendingConnector | null = null;
     let pendingParse: PendingParse | null = null;
     try {
@@ -102,4 +146,9 @@ export async function runWithConnectors(build: () => MValue, parse?: (source: st
     }
   }
   throw new MError("Connector.TooMany", `exceeded ${MAX_ROUNDS} resolution rounds (a connector or Expression.Evaluate may be self-referential).`);
+  } finally {
+    clockMs = prevClock;
+    clockOffsetMin = prevOffset;
+    rng = prevRng;
+  }
 }

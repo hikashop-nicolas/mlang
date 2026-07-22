@@ -12,6 +12,17 @@ const asFunc = (v: MValue | undefined, who: string): MFunction => {
   return v;
 };
 
+/** Best-effort runtime locale for the Culture.Current default (host bindings override it). */
+function runtimeLocale(): string {
+  const nav = (globalThis as { navigator?: { language?: string } }).navigator;
+  if (nav?.language) return nav.language;
+  try {
+    const resolved = Intl.DateTimeFormat().resolvedOptions().locale;
+    if (resolved) return resolved;
+  } catch { /* Intl unavailable */ }
+  return "en-US";
+}
+
 /** Coerce to a JS number for Value.* arithmetic (numbers pass; text parses). */
 function numberish(v: MValue, who: string): number {
   if (v.kind === "number") return v.value;
@@ -285,6 +296,17 @@ export function registerDocument(env: Env): void {
   }));
   // Function.IsDataSource: whether a function is a data-source access; unknown here -> false.
   def("Function.IsDataSource", fn("Function.IsDataSource", [{ name: "function" }], () => logical(false)));
+  // Function.From(functionType, handler): a variadic function whose args are handed to the
+  // handler as one list. The type only informs the signature, which is open here.
+  def("Function.From", fn("Function.From", [{ name: "functionType" }, { name: "function" }], (a) => {
+    const handler = a[1];
+    if (!handler || handler.kind !== "function") err("Expression.Error", "Function.From: second argument must be a function.");
+    return { kind: "function", name: "Function.From", params: [], call: (args) => handler.call([list(args)]) };
+  }));
+  // Culture.Current: the host culture (an M intrinsic value). The app should inject its own
+  // via HostBindings (which override the stdlib); absent that, fall back to the runtime locale
+  // (browser navigator.language / Node process locale), then to en-US.
+  def("Culture.Current", text(runtimeLocale()));
 
   def("Function.Invoke", fn("Function.Invoke", [{ name: "function" }, { name: "args" }], (a) => {
     if (a[0]!.kind !== "function") err("Expression.Error", "Function.Invoke: first argument must be a function.");

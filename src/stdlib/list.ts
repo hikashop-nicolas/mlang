@@ -2,6 +2,7 @@
 import type { Env } from "../interpret.js";
 import { NULL, equals, err, list, logical, number, type MValue } from "../values.js";
 import { callFn, cmpWithNulls, fn, listOf, numOf, truthy } from "./helpers.js";
+import { nextRandom } from "../async-runtime.js";
 
 export function registerList(env: Env): void {
   const def = (name: string, v: MValue): void => env.defineValue(name, v);
@@ -54,6 +55,18 @@ export function registerList(env: Env): void {
     logical(listOf(a[0]!, "List.Contains").some((v) => equals(v, a[1]!)))));
   def("List.PositionOf", fn("List.PositionOf", [{ name: "list" }, { name: "value" }], (a) =>
     number(listOf(a[0]!, "List.PositionOf").findIndex((v) => equals(v, a[1]!)))));
+  // List.Random(count, opt seed): count random numbers in [0,1). A seed makes it repeatable
+  // within and across runs (its own mulberry32); without one it uses the run RNG.
+  def("List.Random", fn("List.Random", [{ name: "count" }, { name: "seed", optional: true }], (a) => {
+    const count = Math.max(0, Math.trunc(numOf(a[0]!, "List.Random count")));
+    if (a[1] && a[1].kind === "number") {
+      let s = a[1].value >>> 0;
+      const out: MValue[] = [];
+      for (let i = 0; i < count; i++) { s = (s + 0x6d2b79f5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; out.push(number(((t ^ (t >>> 14)) >>> 0) / 4294967296)); }
+      return list(out);
+    }
+    return list(Array.from({ length: count }, () => number(nextRandom())));
+  }));
   def("List.ContainsAll", fn("List.ContainsAll", [{ name: "list" }, { name: "values" }, { name: "equationCriteria", optional: true }], (a) => {
     const items = listOf(a[0]!, "List.ContainsAll");
     return logical(listOf(a[1]!, "List.ContainsAll values").every((val) => items.some((v) => equals(v, val))));

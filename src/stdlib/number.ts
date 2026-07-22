@@ -4,6 +4,7 @@ import type { Env } from "../interpret.js";
 import { FALSE, NULL, TRUE, err, number, type MValue } from "../values.js";
 import { fn, numOf } from "./helpers.js";
 import { formatNumber } from "../format.js";
+import { nextRandom } from "../async-runtime.js";
 import { numberFrom } from "./convert.js";
 import { cultureOf } from "../culture.js";
 
@@ -32,6 +33,12 @@ export function registerNumber(env: Env): void {
   def("Number.Epsilon", number(Number.EPSILON));
   def("Number.PI", number(Math.PI));
   def("Number.E", number(Math.E));
+  // Non-deterministic: seeded per evaluation so replay reproduces (see async-runtime).
+  def("Number.Random", fn("Number.Random", [], () => number(nextRandom())));
+  def("Number.RandomBetween", fn("Number.RandomBetween", [{ name: "bottom" }, { name: "top" }], (a) => {
+    const lo = numOf(a[0]!, "Number.RandomBetween"), hi = numOf(a[1]!, "Number.RandomBetween");
+    return number(lo + nextRandom() * (hi - lo));
+  }));
   def("Number.IsEven", nn("Number.IsEven", [{ name: "number" }], (a) => (Math.trunc(numOf(a[0]!, "Number.IsEven")) % 2 === 0 ? TRUE : FALSE)));
   def("Number.IsOdd", nn("Number.IsOdd", [{ name: "number" }], (a) => (Math.abs(Math.trunc(numOf(a[0]!, "Number.IsOdd")) % 2) === 1 ? TRUE : FALSE)));
   // Byte/Int8/Int16/Int32/Percentage all coerce to a number then round to whole (banker's).
