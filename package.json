@@ -8,7 +8,8 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./qdeff": { "types": "./dist/qdeff.d.ts", "import": "./dist/qdeff.js" }
+    "./qdeff": { "types": "./dist/qdeff.d.ts", "import": "./dist/qdeff.js" },
+    "./steps": { "types": "./dist/steps.d.ts", "import": "./dist/steps.js" }
   },
   "files": ["dist"],
   "scripts": {
