@@ -9,15 +9,15 @@ export function registerConstants(env: Env): void {
   const def = (name: string, v: MValue): void => env.defineValue(name, v);
   def("Order.Ascending", N(0));
   def("Order.Descending", N(1));
-  // RankKind (Table.AddRankColumn) and PercentileMode (List.Percentile). Numeric values are
-  // provisional pending oracle confirmation; only the default paths are relied on internally.
+  // RankKind (Table.AddRankColumn) and PercentileMode (List.Percentile). Values from the
+  // reference (rankkind-type / percentilemode-type).
   def("RankKind.Competition", N(0));
   def("RankKind.Dense", N(1));
   def("RankKind.Ordinal", N(2));
-  def("PercentileMode.ExcelInc", N(0));
-  def("PercentileMode.ExcelExc", N(1));
-  def("PercentileMode.SqlCont", N(2));
+  def("PercentileMode.ExcelInc", N(1));
+  def("PercentileMode.ExcelExc", N(2));
   def("PercentileMode.SqlDisc", N(3));
+  def("PercentileMode.SqlCont", N(4));
   def("MissingField.Error", N(0));
   def("MissingField.Ignore", N(1));
   def("MissingField.UseNull", N(2));

@@ -108,8 +108,20 @@ Geometry.FromWellKnownText, Geometry.ToWellKnownText, GeometryPoint.From.
 
 **All three tiers complete.** Every standard M function from the reference diff is now
 implemented except the intentionally-skipped folding/partition/query-plan and internal-use-only
-entries. Remaining known-shallow spots (all oracle-pending, all niche): RankKind/PercentileMode
-enum numeric values, Type.Facets for built-ins, Type.Union widening.
+entries.
+
+Shallow spots resolved (2026-07-22, verified against the reference):
+- RankKind values confirmed correct (Competition=0, Dense=1, Ordinal=2).
+- PercentileMode values corrected to the reference (ExcelInc=1, ExcelExc=2, SqlDisc=3,
+  SqlCont=4) and List.Percentile's mode detection updated accordingly.
+- Type.Facets now returns the canonical facet record (NumericPrecisionBase, NumericPrecision,
+  NumericScale, DateTimePrecision, MaxLength, IsVariableLength, NativeTypeName,
+  NativeDefaultExpression, NativeExpression), null where unset, instead of an empty record.
+  The exact field set/order is probed by the `typesystem` oracle case for final confirmation.
+- Type.Union is now a real union type (MType.union): a value/type matches iff it matches a
+  member; identical members collapse to the single type. Was previously widened to `any`.
+- Table.Profile columns confirmed correct (Column + Min/Max/Average/StandardDeviation/Count/
+  NullCount/DistinctCount).
 
 ## Intentionally skipped - folding / partition / query-plan (no client-side meaning)
 

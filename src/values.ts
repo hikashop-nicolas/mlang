@@ -35,6 +35,7 @@ export interface MType {
   requiredParameters?: number; // minimum arguments to invoke a function type
   facets?: MValue; // advisory facet record (Type.Facets / Type.ReplaceFacets)
   keys?: { columns: string[]; primary: boolean }[]; // table-type keys
+  union?: MType[]; // member types of a union type (name === "union")
 }
 export type MTypeValue = { kind: "type" } & MType;
 

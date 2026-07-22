@@ -21,5 +21,7 @@ in
         RowNames = Record.FieldNames(Type.RecordFields(Type.TableRow(TT))),
         KeyColumns = Type.TableKeys(Type.AddTableKey(TT, {"A"}, true)){0}[Columns],
         KeyPrimary = Type.TableKeys(Type.AddTableKey(TT, {"A"}, true)){0}[Primary],
-        UnionSame = Type.Is(Type.Union({type number, type number}), type number)
+        UnionSame = Type.Is(Type.Union({type number, type number}), type number),
+        FacetNames = Record.FieldNames(Type.Facets(type number)),
+        FacetsAllNull = List.MatchesAll(Record.FieldValues(Type.Facets(type number)), each _ = null)
     ]

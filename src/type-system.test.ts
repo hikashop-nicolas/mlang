@@ -54,11 +54,18 @@ describe("type system: table types & keys", () => {
 });
 
 describe("type system: facets & union", () => {
-  it("Type.ReplaceFacets round-trips through Type.Facets", async () => {
-    expect(await js(`Type.Facets(Type.ReplaceFacets(type number, [NumberOfBits = 64]))[NumberOfBits]`)).toBe(64);
+  it("Type.Facets returns the canonical record; ReplaceFacets round-trips a real facet", async () => {
+    // Unset facets are present but null (not an empty record).
+    expect(await js(`Type.Facets(type number)[NumericPrecision]`)).toBe(null);
+    expect(await js(`Record.HasFields(Type.Facets(type number), "NativeTypeName")`)).toBe(true);
+    expect(await js(`Type.Facets(Type.ReplaceFacets(type number, [NumericPrecision = 10]))[NumericPrecision]`)).toBe(10);
   });
-  it("Type.Union collapses identical types; widens mixed ones to any", async () => {
-    expect(await js(`Type.Is(Type.Union({type number, type number}), type number)`)).toBe(true);
-    expect(await js(`Type.Is(type number, Type.Union({type number, type text}))`)).toBe(true); // widened to any absorbs number
+  it("Type.Union: dedupes to a single type, includes members, excludes non-members", async () => {
+    expect(await js(`Type.Is(Type.Union({type number, type number}), type number)`)).toBe(true); // collapses to number
+    expect(await js(`Type.Is(type number, Type.Union({type number, type text}))`)).toBe(true); // number is a member
+    expect(await js(`Type.Is(type text, Type.Union({type number, type text}))`)).toBe(true); // text is a member
+    expect(await js(`Type.Is(type date, Type.Union({type number, type text}))`)).toBe(false); // date is NOT a member
+    expect(await js(`Value.Is(123, Type.Union({type number, type text}))`)).toBe(true);
+    expect(await js(`Value.Is(#date(2020,1,1), Type.Union({type number, type text}))`)).toBe(false);
   });
 });

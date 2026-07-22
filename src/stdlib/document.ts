@@ -446,18 +446,26 @@ export function registerDocument(env: Env): void {
   }));
 
   // --- Facets & union --------------------------------------------------------------------
-  def("Type.Facets", fn("Type.Facets", [{ name: "type" }], (a) => asType(a[0], "Type.Facets").facets ?? { kind: "record", fields: new Map() }));
+  // A type's facets are advisory metadata; Type.Facets always returns the canonical record
+  // (every field present, null where unset) and Type.ReplaceFacets stores set values.
+  const FACET_FIELDS = ["NumericPrecisionBase", "NumericPrecision", "NumericScale", "DateTimePrecision", "MaxLength", "IsVariableLength", "NativeTypeName", "NativeDefaultExpression", "NativeExpression"];
+  def("Type.Facets", fn("Type.Facets", [{ name: "type" }], (a) => {
+    const stored = asType(a[0], "Type.Facets").facets;
+    const set = stored?.kind === "record" ? stored.fields : new Map<string, MValue>();
+    return { kind: "record", fields: new Map(FACET_FIELDS.map((f) => [f, set.get(f) ?? NULL])) };
+  }));
   def("Type.ReplaceFacets", fn("Type.ReplaceFacets", [{ name: "type" }, { name: "facets" }], (a) => {
     const facets = a[1]!;
     if (facets.kind !== "record") err("Expression.Error", "Type.ReplaceFacets: facets must be a record.");
     return typeVal({ ...asType(a[0], "Type.ReplaceFacets"), facets });
   }));
   def("Type.Union", fn("Type.Union", [{ name: "types" }], (a) => {
-    const types = listOf(a[0]!, "Type.Union").map((t) => asType(t, "Type.Union"));
-    if (!types.length) return typeVal({ name: "none" });
-    const first = types[0]!;
-    const uniform = types.every((t) => t.name === first.name && !!t.nullable === !!first.nullable);
-    return typeVal(uniform ? first : { name: "any" });
+    const members: MType[] = [];
+    for (const t of listOf(a[0]!, "Type.Union")) for (const m of asType(t, "Type.Union").union ?? [asType(t, "Type.Union")]) members.push(m);
+    if (!members.length) return typeVal({ name: "none" });
+    const seen = new Set<string>(); const dedup: MType[] = [];
+    for (const m of members) { const k = `${m.name}|${m.nullable ? 1 : 0}|${m.ascription ?? ""}`; if (!seen.has(k)) { seen.add(k); dedup.push(m); } }
+    return typeVal(dedup.length === 1 ? dedup[0]! : { name: "union", union: dedup });
   }));
 }
 

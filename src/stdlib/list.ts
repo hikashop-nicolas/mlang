@@ -151,7 +151,9 @@ export function registerList(env: Env): void {
   def("List.Percentile", fn("List.Percentile", [{ name: "list" }, { name: "percentiles" }, { name: "options", optional: true }], (a) => {
     const sorted = listOf(a[0]!, "List.Percentile").filter((v) => v.kind !== "null").map((v) => numOf(v, "List.Percentile")).sort((x, y) => x - y);
     if (!sorted.length) return NULL;
-    const opt = a[2]; const exc = opt?.kind === "record" && opt.fields.get("PercentileMode")?.kind === "number" && (opt.fields.get("PercentileMode") as { value: number }).value === 1;
+    const opt = a[2];
+    const mode = opt?.kind === "record" && opt.fields.get("PercentileMode")?.kind === "number" ? (opt.fields.get("PercentileMode") as { value: number }).value : 1; // ExcelInc default
+    const exc = mode === 2; // PercentileMode.ExcelExc
     const one = (p: number): MValue => number(percentile(sorted, p, exc));
     return a[1]!.kind === "list" ? list(a[1]!.items.map((p) => one(numOf(p, "percentile")))) : one(numOf(a[1]!, "percentile"));
   }));

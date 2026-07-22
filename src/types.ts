@@ -31,6 +31,7 @@ export function mtypeOfValue(v: MValue): MType {
 
 /** Does a value inhabit a type? (`is` operator, Value.Is.) */
 export function valueMatchesType(v: MValue, t: MType): boolean {
+  if (t.union) return t.union.some((m) => valueMatchesType(v, m));
   if (t.name === "any") return true;
   if (v.kind === "null") return !!t.nullable || t.name === "null" || t.name === "none";
   if (t.name === "anynonnull") return true;
@@ -40,6 +41,8 @@ export function valueMatchesType(v: MValue, t: MType): boolean {
 /** Is `a` assignable to `b`? Shallow: `any` absorbs all; equal primitive names with
     compatible nullability; a list/record/table matches the same kind. */
 export function subtypeOf(a: MType, b: MType): boolean {
+  if (b.union) return b.union.some((m) => subtypeOf(a, m)); // a fits if it fits any member
+  if (a.union) return a.union.every((m) => subtypeOf(m, b)); // all members must fit b
   if (b.name === "any") return true;
   if (a.name === "none") return true;
   if (a.name !== b.name) return false;
