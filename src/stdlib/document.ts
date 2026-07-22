@@ -171,6 +171,16 @@ export function registerDocument(env: Env): void {
     return logical(valueMatchesType(a[0]!, ty.name));
   }));
   def("Value.Type", fn("Value.Type", [{ name: "value" }], (a) => ({ kind: "type", name: a[0]!.kind })));
+  // Value.ReplaceType / ReplaceMetadata are used pervasively to document functions; the
+  // ascribed type and metadata are advisory here, so the value passes through unchanged.
+  def("Value.ReplaceType", fn("Value.ReplaceType", [{ name: "value" }, { name: "type" }], (a) => a[0]!));
+  def("Value.ReplaceMetadata", fn("Value.ReplaceMetadata", [{ name: "value" }, { name: "metadata" }], (a) => a[0]!));
+  def("Value.Metadata", fn("Value.Metadata", [{ name: "value" }], () => ({ kind: "record", fields: new Map() })));
+
+  def("Function.Invoke", fn("Function.Invoke", [{ name: "function" }, { name: "args" }], (a) => {
+    if (a[0]!.kind !== "function") err("Expression.Error", "Function.Invoke: first argument must be a function.");
+    return a[0]!.call(a[1]!.kind === "list" ? a[1]!.items : [a[1]!]);
+  }));
 }
 
 function logicalTrue(v: MValue): boolean {

@@ -126,4 +126,48 @@ export function registerList(env: Env): void {
     const mean = ns.reduce((s, x) => s + x, 0) / ns.length;
     return Math.sqrt(ns.reduce((s, x) => s + (x - mean) ** 2, 0) / (ns.length - 1));
   }));
+
+  def("List.IsEmpty", fn("List.IsEmpty", [{ name: "list" }], (a) => logical(listOf(a[0]!, "List.IsEmpty").length === 0)));
+  def("List.Difference", fn("List.Difference", [{ name: "list1" }, { name: "list2" }, { name: "equationCriteria", optional: true }], (a) => {
+    const remove = listOf(a[1]!, "List.Difference");
+    return list(listOf(a[0]!, "List.Difference").filter((v) => !remove.some((r) => equals(r, v))));
+  }));
+  def("List.RemoveItems", fn("List.RemoveItems", [{ name: "list1" }, { name: "list2" }], (a) => {
+    const remove = listOf(a[1]!, "List.RemoveItems");
+    return list(listOf(a[0]!, "List.RemoveItems").filter((v) => !remove.some((r) => equals(r, v))));
+  }));
+  def("List.Union", fn("List.Union", [{ name: "lists" }, { name: "equationCriteria", optional: true }], (a) => {
+    const out: MValue[] = [];
+    for (const inner of listOf(a[0]!, "List.Union")) for (const v of listOf(inner, "List.Union")) if (!out.some((x) => equals(x, v))) out.push(v);
+    return list(out);
+  }));
+  def("List.Intersect", fn("List.Intersect", [{ name: "lists" }, { name: "equationCriteria", optional: true }], (a) => {
+    const parts = listOf(a[0]!, "List.Intersect").map((v) => listOf(v, "List.Intersect"));
+    if (parts.length === 0) return list([]);
+    const out: MValue[] = [];
+    for (const v of parts[0]!) if (parts.every((p) => p.some((x) => equals(x, v))) && !out.some((x) => equals(x, v))) out.push(v);
+    return list(out);
+  }));
+  def("List.ReplaceMatchingItems", fn("List.ReplaceMatchingItems", [{ name: "list" }, { name: "replacements" }, { name: "equationCriteria", optional: true }], (a) => {
+    const reps = listOf(a[1]!, "List.ReplaceMatchingItems").map((p) => listOf(p, "replacement"));
+    return list(listOf(a[0]!, "List.ReplaceMatchingItems").map((v) => {
+      const hit = reps.find((r) => equals(r[0]!, v));
+      return hit ? hit[1]! : v;
+    }));
+  }));
+  // List.Alternate(list, count, optional repeatInterval, optional offset): keep `offset`, then
+  // repeatedly remove `count` and keep `repeatInterval` (default repeatInterval = 1).
+  def("List.Alternate", fn("List.Alternate", [{ name: "list" }, { name: "count" }, { name: "repeatInterval", optional: true }, { name: "offset", optional: true }], (a) => {
+    const items = listOf(a[0]!, "List.Alternate");
+    const count = numOf(a[1]!, "count");
+    const repeat = a[2] && a[2].kind === "number" ? a[2].value : 1;
+    const offset = a[3] && a[3].kind === "number" ? a[3].value : 0;
+    const out: MValue[] = items.slice(0, offset);
+    let i = offset;
+    while (i < items.length) {
+      i += count; // remove
+      for (let k = 0; k < repeat && i < items.length; k++, i++) out.push(items[i]!); // keep
+    }
+    return list(out);
+  }));
 }

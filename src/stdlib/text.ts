@@ -152,6 +152,13 @@ export function registerText(env: Env): void {
     return text(to < 0 ? "" : rest.slice(0, to));
   }));
 
+  def("Text.ToList", nn("Text.ToList", [{ name: "text" }], (a) => list([...textOf(a[0]!, "Text.ToList")].map(text))));
+  def("Text.SplitAny", nn("Text.SplitAny", [{ name: "text" }, { name: "separators" }], (a) => {
+    const seps = [...textOf(a[1]!, "Text.SplitAny")];
+    const re = new RegExp(`[${seps.map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("")}]`);
+    return list(textOf(a[0]!, "Text.SplitAny").split(re).map(text));
+  }));
+
   def("Character.FromNumber", fn("Character.FromNumber", [{ name: "number" }], (a) => text(String.fromCodePoint(numOf(a[0]!, "Character.FromNumber")))));
   def("Character.ToNumber", fn("Character.ToNumber", [{ name: "character" }], (a) => number(textOf(a[0]!, "Character.ToNumber").codePointAt(0) ?? 0)));
 

@@ -46,6 +46,38 @@ export function registerTable(env: Env): void {
     const p = textOf(a[1]!, "prefix");
     return table(t.columns.map((c) => `${p}.${c}`), t.rows, t.types);
   }));
+  def("Table.DuplicateColumn", fn("Table.DuplicateColumn", [{ name: "table" }, { name: "column" }, { name: "newColumnName" }, { name: "columnType", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.DuplicateColumn");
+    const ci = colIndex(t, textOf(a[1]!, "column"));
+    const name = textOf(a[2]!, "new column name");
+    if (t.columns.includes(name)) err("Expression.Error", `A column named '${name}' already exists.`);
+    return table([...t.columns, name], t.rows.map((r) => [...r, r[ci] ?? NULL]), t.types);
+  }));
+  def("Table.ReorderColumns", fn("Table.ReorderColumns", [{ name: "table" }, { name: "columnOrder" }, { name: "missingField", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.ReorderColumns");
+    const order = namesOf(a[1]!, "column");
+    for (const c of order) colIndex(t, c);
+    const rest = t.columns.filter((c) => !order.includes(c)); // lenient: append any not listed
+    const cols = [...order, ...rest];
+    const idx = cols.map((c) => t.columns.indexOf(c));
+    return table(cols, t.rows.map((r) => idx.map((i) => r[i] ?? NULL)));
+  }));
+  def("Table.ToRecords", fn("Table.ToRecords", [{ name: "table" }], (a) => {
+    const t = asTable(a[0]!, "Table.ToRecords");
+    return list(t.rows.map((_, i) => rowRecord(t, i)));
+  }));
+  // We never produce per-cell error values (FIDELITY: AddColumn stores null), so there is
+  // nothing to replace - this validates the columns and returns the table unchanged.
+  def("Table.ReplaceErrorValues", fn("Table.ReplaceErrorValues", [{ name: "table" }, { name: "errorReplacement" }], (a) => {
+    const t = asTable(a[0]!, "Table.ReplaceErrorValues");
+    for (const [colV] of pairList(a[1]!, "Table.ReplaceErrorValues")) colIndex(t, textOf(colV!, "column"));
+    return t;
+  }));
+  def("Table.ColumnsOfType", fn("Table.ColumnsOfType", [{ name: "table" }, { name: "listOfTypes" }], (a) => {
+    const t = asTable(a[0]!, "Table.ColumnsOfType");
+    const wanted = new Set((a[1]!.kind === "list" ? a[1]!.items : [a[1]!]).map((v) => (v.kind === "type" ? v.name : "")));
+    return list(t.columns.filter((c) => wanted.has(t.types?.get(c) ?? "any")).map(text));
+  }));
   def("Table.FromValue", fn("Table.FromValue", [{ name: "value" }, { name: "options", optional: true }], (a) => {
     const v = a[0]!;
     if (v.kind === "list") return table(["Value"], v.items.map((x) => [x]));
