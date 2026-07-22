@@ -4,6 +4,14 @@ import { NULL, err, list, logical, number, text, type MValue } from "../values.j
 import { fn, listOf, numOf, textOf, truthy } from "./helpers.js";
 import { numberFrom, textFrom } from "./convert.js";
 import { cultureOf } from "../culture.js";
+import { nextRandom } from "../async-runtime.js";
+
+/** A random RFC-4122 v4 GUID as text (uses the run RNG so it's replay-stable). */
+function newGuid(): string {
+  const hex = (n: number) => Math.floor(nextRandom() * 16 ** n).toString(16).padStart(n, "0");
+  const y = (8 + Math.floor(nextRandom() * 4)).toString(16); // variant bits 10xx
+  return `${hex(8)}-${hex(4)}-4${hex(3)}-${y}${hex(3)}-${hex(8)}${hex(4)}`;
+}
 
 /** null-in null-out wrapper for the many Text functions that propagate null. */
 const nn = (name: string, params: { name: string; optional?: boolean }[], f: (args: MValue[]) => MValue) =>
@@ -11,6 +19,33 @@ const nn = (name: string, params: { name: string; optional?: boolean }[], f: (ar
 
 export function registerText(env: Env): void {
   const def = (name: string, v: MValue): void => env.defineValue(name, v);
+
+  // --- Logical.* --------------------------------------------------------------------
+  def("Logical.From", nn("Logical.From", [{ name: "value" }], (a) => {
+    const v = a[0]!;
+    if (v.kind === "logical") return v;
+    if (v.kind === "number") return logical(v.value !== 0);
+    if (v.kind === "text") { const s = v.value.trim().toLowerCase(); if (s === "true") return logical(true); if (s === "false") return logical(false); }
+    err("Expression.Error", `Logical.From: cannot convert ${v.kind}.`);
+  }));
+  def("Logical.FromText", nn("Logical.FromText", [{ name: "text" }], (a) => {
+    const s = textOf(a[0]!, "Logical.FromText").trim().toLowerCase();
+    if (s === "true") return logical(true);
+    if (s === "false") return logical(false);
+    err("Expression.Error", `Logical.FromText: "${s}" is not "true" or "false".`);
+  }));
+  def("Logical.ToText", nn("Logical.ToText", [{ name: "logical" }], (a) => text(a[0]!.kind === "logical" && a[0]!.value ? "true" : "false")));
+
+  // --- Guid.* -----------------------------------------------------------------------
+  def("Text.NewGuid", fn("Text.NewGuid", [], () => text(newGuid())));
+  def("Guid.From", nn("Guid.From", [{ name: "value" }], (a) => {
+    const v = a[0]!;
+    const s = v.kind === "text" ? v.value : err("Expression.Error", "Guid.From: expected text.");
+    const clean = s.trim().replace(/^\{|\}$/g, "");
+    const m = clean.replace(/-/g, "");
+    if (!/^[0-9a-fA-F]{32}$/.test(m)) err("Expression.Error", `Guid.From: "${s}" is not a valid GUID.`);
+    return text(`${m.slice(0, 8)}-${m.slice(8, 12)}-${m.slice(12, 16)}-${m.slice(16, 20)}-${m.slice(20)}`.toLowerCase());
+  }));
 
   def("Text.From", fn("Text.From", [{ name: "value" }, { name: "culture", optional: true }], (a) =>
     a[0]!.kind === "null" ? NULL : text(textFrom(a[0]!))));
@@ -103,6 +138,23 @@ export function registerText(env: Env): void {
     return number(occ === 1 ? s.lastIndexOf(sub) : s.indexOf(sub));
   }));
 
+  def("Text.PositionOfAny", nn("Text.PositionOfAny", [{ name: "text" }, { name: "characters" }, { name: "occurrence", optional: true }], (a) => {
+    const s = textOf(a[0]!, "Text.PositionOfAny");
+    const chars = new Set(listOf(a[1]!, "Text.PositionOfAny characters").map((c) => textOf(c, "character")));
+    const occ = a[2] && a[2].kind === "number" ? a[2].value : 0;
+    const positions: number[] = [];
+    for (let i = 0; i < s.length; i++) if (chars.has(s[i]!)) positions.push(i);
+    if (occ === 2) return list(positions.map(number));
+    return number(occ === 1 ? (positions[positions.length - 1] ?? -1) : (positions[0] ?? -1));
+  }));
+  // Text.InferNumberType: the most specific numeric type text encodes (Int64/Double/etc).
+  def("Text.InferNumberType", nn("Text.InferNumberType", [{ name: "text" }, { name: "culture", optional: true }], (a) => {
+    const v = numberFrom(a[0]!, cultureOf(a[1]?.kind === "text" ? a[1].value : null));
+    if (v.kind !== "number") err("Expression.Error", "Text.InferNumberType: not a number.");
+    const ascription = Number.isInteger(v.value) ? "Int64.Type" : "Double.Type";
+    return { kind: "type", name: "number", ascription };
+  }));
+
   def("Text.Replace", nn("Text.Replace", [{ name: "text" }, { name: "old" }, { name: "new" }], (a) =>
     text(textOf(a[0]!, "Text.Replace").split(textOf(a[1]!, "old")).join(textOf(a[2]!, "new")))));
   def("Text.Split", nn("Text.Split", [{ name: "text" }, { name: "separator" }], (a) =>
@@ -172,6 +224,35 @@ export function registerText(env: Env): void {
       return text(out);
     });
   }));
+  // CombineTextByLengths: pad/truncate each part to the given length, then concatenate.
+  def("Combiner.CombineTextByLengths", fn("Combiner.CombineTextByLengths", [{ name: "lengths" }, { name: "template", optional: true }], (a) => {
+    const lens = listOf(a[0]!, "lengths").map((v) => numOf(v, "length"));
+    return fn("combiner", [{ name: "parts" }], (b) => {
+      const parts = listOf(b[0]!, "combine").map((v) => (v.kind === "null" ? "" : textOf(v, "combine")));
+      return text(parts.map((p, i) => { const len = lens[i] ?? p.length; return p.length >= len ? p.slice(0, len) : p.padEnd(len); }).join(""));
+    });
+  }));
+  // CombineTextByPositions: place each part at its absolute output offset (gaps space-filled).
+  def("Combiner.CombineTextByPositions", fn("Combiner.CombineTextByPositions", [{ name: "positions" }, { name: "template", optional: true }], (a) => {
+    const pos = listOf(a[0]!, "positions").map((v) => numOf(v, "position"));
+    return fn("combiner", [{ name: "parts" }], (b) => {
+      const parts = listOf(b[0]!, "combine").map((v) => (v.kind === "null" ? "" : textOf(v, "combine")));
+      let out = "";
+      parts.forEach((p, i) => { const at = pos[i] ?? out.length; if (out.length < at) out = out.padEnd(at); out = out.slice(0, at) + p + out.slice(at + p.length); });
+      return text(out);
+    });
+  }));
+  // CombineTextByRanges: {offset, length} pairs placing each part into a fixed-width slot.
+  def("Combiner.CombineTextByRanges", fn("Combiner.CombineTextByRanges", [{ name: "ranges" }, { name: "template", optional: true }], (a) => {
+    const ranges = listOf(a[0]!, "ranges").map((r) => { const p = listOf(r, "range"); return { off: numOf(p[0]!, "offset"), len: p[1] && p[1].kind === "number" ? p[1].value : null }; });
+    return fn("combiner", [{ name: "parts" }], (b) => {
+      const parts = listOf(b[0]!, "combine").map((v) => (v.kind === "null" ? "" : textOf(v, "combine")));
+      let out = "";
+      parts.forEach((p, i) => { const r = ranges[i]; if (!r) return; const slot = r.len === null ? p : (p.length >= r.len ? p.slice(0, r.len) : p.padEnd(r.len)); if (out.length < r.off) out = out.padEnd(r.off); out = out.slice(0, r.off) + slot + out.slice(r.off + slot.length); });
+      return text(out);
+    });
+  }));
+
   // Split where the character class changes between two sets (e.g. letters<->digits).
   def("Splitter.SplitTextByCharacterTransition", fn("Splitter.SplitTextByCharacterTransition", [{ name: "before" }, { name: "after" }], (a) => {
     const inSet = (spec: MValue, ch: string): boolean => {
@@ -290,6 +371,50 @@ export function registerText(env: Env): void {
     return fn("splitter", [{ name: "text" }], (b) => {
       const s = textOf(b[0]!, "split input");
       return list(pos.map((p, i) => text(s.slice(p, pos[i + 1] ?? s.length))));
+    });
+  }));
+  // Split on runs of whitespace (leading/trailing trimmed, empty parts dropped).
+  def("Splitter.SplitTextByWhitespace", fn("Splitter.SplitTextByWhitespace", [{ name: "quoteStyle", optional: true }], () =>
+    fn("splitter", [{ name: "text" }], (b) => {
+      const parts = textOf(b[0]!, "split input").split(/\s+/).filter((p) => p !== "");
+      return list((parts.length ? parts : [""]).map(text));
+    })));
+  // Fixed-width lengths (each used once); a null length means "the rest".
+  def("Splitter.SplitTextByLengths", fn("Splitter.SplitTextByLengths", [{ name: "lengths" }, { name: "startAtEnd", optional: true }], (a) => {
+    const lens = listOf(a[0]!, "lengths").map((v) => (v.kind === "null" ? null : numOf(v, "length")));
+    return fn("splitter", [{ name: "text" }], (b) => {
+      const s = textOf(b[0]!, "split input");
+      const out: MValue[] = [];
+      let i = 0;
+      for (const len of lens) { const take = len === null ? s.length - i : len; out.push(text(s.slice(i, i + take))); i += take; }
+      return list(out);
+    });
+  }));
+  // {offset, length} pairs (length null = rest). Ranges may overlap; startAtEnd counts back.
+  def("Splitter.SplitTextByRanges", fn("Splitter.SplitTextByRanges", [{ name: "ranges" }, { name: "startAtEnd", optional: true }], (a) => {
+    const ranges = listOf(a[0]!, "ranges").map((r) => { const p = listOf(r, "range"); return { off: numOf(p[0]!, "offset"), len: p[1] && p[1].kind === "number" ? p[1].value : null }; });
+    const fromEnd = a[1]?.kind === "logical" && a[1].value;
+    return fn("splitter", [{ name: "text" }], (b) => {
+      const s = textOf(b[0]!, "split input");
+      return list(ranges.map((r) => {
+        const start = fromEnd ? s.length - r.off - (r.len ?? 0) : r.off;
+        return text(r.len === null ? s.slice(r.off) : s.slice(start, start + r.len));
+      }));
+    });
+  }));
+  // Split wherever ANY of the given delimiters occurs.
+  def("Splitter.SplitTextByAnyDelimiter", fn("Splitter.SplitTextByAnyDelimiter", [{ name: "delimiters" }, { name: "quoteStyle", optional: true }, { name: "startAtEnd", optional: true }], (a) => {
+    const delims = listOf(a[0]!, "delimiters").map((v) => textOf(v, "delimiter")).filter((d) => d.length > 0);
+    return fn("splitter", [{ name: "text" }], (b) => {
+      const s = textOf(b[0]!, "split input");
+      const out: string[] = [];
+      let cur = "";
+      for (let i = 0; i < s.length; ) {
+        const hit = delims.find((d) => s.startsWith(d, i));
+        if (hit) { out.push(cur); cur = ""; i += hit.length; } else { cur += s[i]; i++; }
+      }
+      out.push(cur);
+      return list(out.map(text));
     });
   }));
 

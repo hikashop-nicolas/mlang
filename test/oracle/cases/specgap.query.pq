@@ -1,0 +1,38 @@
+let
+    T = #table({"A", "B"}, {{3, "x"}, {7, "y"}, {5, "z"}})
+in
+    [
+        Currency = Currency.From("3.14159"),
+        Combinations = Number.Combinations(5, 2),
+        Permutations = Number.Permutations(5, 2),
+        RoundAway = Number.RoundAwayFromZero(-2.1),
+        RoundToward = Number.RoundTowardZero(-2.9),
+        LogicalFrom = Logical.From(0),
+        Guid = Guid.From("{0F8FAD5B-D9CB-469F-A165-70867728950E}"),
+        InsertRange = List.InsertRange({1, 2, 5}, 2, {3, 4}),
+        RemoveRange = List.RemoveRange({1, 2, 3, 4}, 1, 2),
+        PositionOfAny = List.PositionOfAny({1, 2, 3}, {3, 1}),
+        IsDistinct = List.IsDistinct({1, 2, 2}),
+        NonNullCount = List.NonNullCount({1, null, 3}),
+        Mode = List.Mode({1, 2, 2, 3, 3, 3}),
+        PercentileInc = List.Percentile({5, 3, 1, 7, 9}, 0.25),
+        PercentileExc = List.Percentile({5, 3, 1, 7, 9}, {0.25, 0.5, 0.75}, [PercentileMode = PercentileMode.ExcelExc]),
+        DateRec = Date.ToRecord(#date(2021, 3, 14)),
+        DurRec = Duration.ToRecord(#duration(1, 2, 3, 4)),
+        DurText = Duration.ToText(#duration(1, 2, 3, 4)),
+        AddZoneHours = DateTimeZone.ZoneHours(DateTime.AddZone(#datetime(2021, 1, 1, 0, 0, 0), 9)),
+        TableMax = Table.Max(T, "A"),
+        TableMin = Table.Min(T, "A"),
+        FirstValue = Table.FirstValue(T),
+        ToList = Table.ToList(#table({"A", "B"}, {{1, 2}})),
+        Rank = Table.Column(Table.AddRankColumn(#table({"R"}, {{200}, {100}, {200}, {50}}), "K", {"R", Order.Descending}), "K"),
+        Contains = Table.Contains(T, [A = 7]),
+        PositionOf = Table.PositionOf(T, [A = 5]),
+        UriHost = Uri.Parts("https://host.com/a?x=1&y=hi")[Host],
+        UriPort = Uri.Parts("http://h/")[Port],
+        UriQuery = Uri.Parts("https://host.com/a?x=1&y=hi")[Query][y],
+        SplitRanges = Splitter.SplitTextByRanges({{0, 5}, {5, null}})("98052Redmond"),
+        SplitWhitespace = Splitter.SplitTextByWhitespace()("  a   b c "),
+        ValueEquals = Value.Equals(1, 1),
+        ReorderFields = Record.FieldNames(Record.ReorderFields([a = 1, b = 2, c = 3], {"c", "a"}))
+    ]

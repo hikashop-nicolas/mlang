@@ -2,7 +2,7 @@
 // entry points that let queries process embedded data. From the public reference; the
 // CSV/JSON option shapes not covered raise precise errors.
 import type { Env } from "../interpret.js";
-import { NULL, binary, compare, equals as equalsVal, err, list, logical, number, table, text, typeVal, type MFunction, type MType, type MValue } from "../values.js";
+import { NULL, binary, compare, equals as equalsVal, err, list, logical, number, record, table, text, typeVal, type MFunction, type MType, type MValue } from "../values.js";
 import { fn, listOf, textOf, type Table } from "./helpers.js";
 import { fromJson } from "../host.js";
 import { mtypeOfValue, subtypeOf, valueMatchesType } from "../types.js";
@@ -206,6 +206,21 @@ export function registerDocument(env: Env): void {
     if (/^[a-z][a-z0-9+.-]*:\/\//i.test(rel)) return text(rel);
     return text(base.replace(/\/+$/, "") + "/" + rel.replace(/^\/+/, ""));
   }));
+  def("Uri.Parts", fn("Uri.Parts", [{ name: "absoluteUri" }], (a) => {
+    const raw = textOf(a[0]!, "Uri.Parts");
+    const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : "http://" + raw;
+    let u: URL;
+    try { u = new URL(withScheme); } catch { err("Expression.Error", `Uri.Parts: "${raw}" is not a valid URI.`); }
+    const scheme = u.protocol.replace(/:$/, "");
+    const port = u.port ? Number(u.port) : scheme === "https" ? 443 : scheme === "http" ? 80 : scheme === "ftp" ? 21 : -1;
+    const query = new Map<string, MValue>();
+    for (const [k, v] of u.searchParams) query.set(k, text(v));
+    return record([
+      ["Scheme", text(scheme)], ["Host", text(u.hostname)], ["Port", number(port)],
+      ["Path", text(u.pathname || "/")], ["Query", { kind: "record", fields: query }],
+      ["Fragment", text(u.hash.replace(/^#/, ""))], ["UserName", text(decodeURIComponent(u.username))], ["Password", text(decodeURIComponent(u.password))],
+    ]);
+  }));
 
   def("Table.FromColumns", fn("Table.FromColumns", [{ name: "lists" }, { name: "columns", optional: true }], (a) => {
     const cols = listOf(a[0]!, "Table.FromColumns").map((c) => listOf(c, "column"));
@@ -281,6 +296,17 @@ export function registerDocument(env: Env): void {
     const c = compare(x, y);
     return number(c < 0 ? -1 : c > 0 ? 1 : 0);
   }));
+  def("Value.Equals", fn("Value.Equals", [{ name: "value1" }, { name: "value2" }, { name: "comparer", optional: true }], (a) => logical(equalsVal(a[0]!, a[1]!))));
+  def("Value.NullableEquals", fn("Value.NullableEquals", [{ name: "value1" }, { name: "value2" }, { name: "comparer", optional: true }], (a) =>
+    a[0]!.kind === "null" || a[1]!.kind === "null" ? NULL : logical(equalsVal(a[0]!, a[1]!))));
+  def("Value.As", fn("Value.As", [{ name: "value" }, { name: "type" }], (a) => {
+    const ty = a[1]!;
+    if (ty.kind !== "type") err("Expression.Error", "Value.As: second argument must be a type.");
+    if (!valueMatchesType(a[0]!, ty)) err("Expression.Error", "Value.As: value is not compatible with the given type.");
+    return a[0]!;
+  }));
+  def("Value.RemoveMetadata", fn("Value.RemoveMetadata", [{ name: "value" }], (a) => a[0]!));
+
   def("Comparer.Equals", fn("Comparer.Equals", [{ name: "comparer" }, { name: "x" }, { name: "y" }], (a) => {
     // comparer(x,y)==0 means equal; if a plain comparer function was passed, honour it.
     if (a[0]!.kind === "function") { const r = a[0]!.call([a[1]!, a[2]!]); return logical(r.kind === "number" ? r.value === 0 : equalsVal(a[1]!, a[2]!)); }

@@ -71,6 +71,43 @@ export function registerBinaryFormat(env: Env): void {
   def("BinaryFormat.UnsignedInteger64", intFormat("BinaryFormat.UnsignedInteger64", 8, false));
   def("BinaryFormat.SignedInteger64", intFormat("BinaryFormat.SignedInteger64", 8, true));
 
+  // IEEE floats (little-endian, matching .NET BinaryReader) and .NET 16-byte decimal.
+  def("BinaryFormat.Single", format("BinaryFormat.Single", (bytes, offset) => {
+    need(bytes, offset, 4, "BinaryFormat.Single");
+    return { value: number(new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getFloat32(0, true)), offset: offset + 4 };
+  }));
+  def("BinaryFormat.Double", format("BinaryFormat.Double", (bytes, offset) => {
+    need(bytes, offset, 8, "BinaryFormat.Double");
+    return { value: number(new DataView(bytes.buffer, bytes.byteOffset + offset, 8).getFloat64(0, true)), offset: offset + 8 };
+  }));
+  def("BinaryFormat.Decimal", format("BinaryFormat.Decimal", (bytes, offset) => {
+    need(bytes, offset, 16, "BinaryFormat.Decimal");
+    const dv = new DataView(bytes.buffer, bytes.byteOffset + offset, 16);
+    const lo = dv.getUint32(0, true), mid = dv.getUint32(4, true), hi = dv.getUint32(8, true), flags = dv.getUint32(12, true);
+    const scale = (flags >> 16) & 0xff; const neg = (flags & 0x80000000) !== 0;
+    const mant = Number((BigInt(hi) << 64n) | (BigInt(mid) << 32n) | BigInt(lo));
+    return { value: number((neg ? -mant : mant) / 10 ** scale), offset: offset + 16 };
+  }));
+  // 7-bit variable-length ("LEB128"-style) integers.
+  const read7bit = (signed: boolean): MFunction => format(signed ? "BinaryFormat.7BitEncodedSignedInteger" : "BinaryFormat.7BitEncodedUnsignedInteger", (bytes, offset) => {
+    let result = 0n, shift = 0n, i = offset, byte: number;
+    do { byte = bytes[i] ?? err("Expression.Error", "7BitEncodedInteger: unexpected end of binary") as never; result |= BigInt(byte & 0x7f) << shift; shift += 7n; i++; } while (byte & 0x80);
+    let v = result;
+    if (signed && (v & (1n << (shift - 1n)))) v -= 1n << shift; // sign-extend
+    return { value: number(Number(v)), offset: i };
+  });
+  def("BinaryFormat.7BitEncodedUnsignedInteger", read7bit(false));
+  def("BinaryFormat.7BitEncodedSignedInteger", read7bit(true));
+  // Group: reads key-prefixed items until end of data, returns the list of item values.
+  def("BinaryFormat.Group", fn("BinaryFormat.Group", [{ name: "keyFormat" }, { name: "itemFormat" }], (a) => {
+    const keyR = readerOf(a[0]!, "BinaryFormat.Group key"); const itemR = readerOf(a[1]!, "BinaryFormat.Group item");
+    return format("BinaryFormat.Group", (bytes, offset) => {
+      const out: MValue[] = []; let o = offset;
+      while (o < bytes.length) { const k = keyR(bytes, o); const it = itemR(bytes, k.offset); out.push(it.value); o = it.offset; }
+      return { value: { kind: "list", items: out }, offset: o };
+    });
+  }));
+
   def("BinaryFormat.ByteOrder", fn("BinaryFormat.ByteOrder", [{ name: "binaryFormat" }, { name: "byteOrder" }], (a) => {
     const little = a[1]!.kind === "number" && a[1]!.value === 1; // ByteOrder.LittleEndian = 1
     const rebuild = a[0]!.kind === "function" ? intRebuild.get(a[0]!) : undefined;

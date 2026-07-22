@@ -2,7 +2,7 @@
 // DateTime.* / Duration.* Tier-1 subset. Semantics from the public reference; the date
 // arithmetic edge cases are oracle-pinned.
 import type { Env } from "../interpret.js";
-import { NULL, date, datetime, datetimezone, duration, err, logical, number, text, time, type MValue } from "../values.js";
+import { NULL, date, datetime, datetimezone, duration, err, logical, number, record, text, time, type MValue } from "../values.js";
 import { END_OF_DAY_SECS, addMonths, civilFromDays, dateTimeToSerial, dayOfWeekSunday0, daysFromCivil, daysInMonth, parseDateTimeText, parseDateTimeZoneText, parseDateText, serialToDateTime, usDate, usDateTime, usTimeShort } from "../temporal.js";
 import { cultureOf, parseDateCulture } from "../culture.js";
 import { fn, numOf } from "./helpers.js";
@@ -49,6 +49,35 @@ function nowFieldsAt(offsetMin: number): NowFields {
 }
 const localNowFields = (): NowFields => nowFieldsAt(currentOffsetMinutes());
 const utcNowFields = (): NowFields => nowFieldsAt(0);
+/** Civil fields (UTC-read) of an arbitrary Unix-epoch second count. */
+function nowFieldsFromEpoch(epochSecs: number): NowFields {
+  const d = new Date(epochSecs * 1000);
+  return { y: d.getUTCFullYear(), mo: d.getUTCMonth() + 1, day: d.getUTCDate(), secs: d.getUTCHours() * 3600 + d.getUTCMinutes() * 60 + d.getUTCSeconds() + d.getUTCMilliseconds() / 1000 };
+}
+
+const expectText = (v: MValue, who: string): string => { if (v.kind !== "text") err("Expression.Error", `${who}: expected text.`); return v.value; };
+/** Duration -> "[-]d.hh:mm:ss[.fffffff]" (the days part and fraction omitted when zero). */
+function durationToText(secs: number): string {
+  const sign = secs < 0 ? "-" : ""; let s = Math.abs(secs);
+  const days = Math.trunc(s / 86400); s -= days * 86400;
+  const h = Math.trunc(s / 3600); s -= h * 3600;
+  const mi = Math.trunc(s / 60); const sec = s - mi * 60;
+  const whole = Math.trunc(sec); const frac = sec - whole;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const fracStr = frac > 0 ? "." + frac.toFixed(7).slice(2).replace(/0+$/, "") : "";
+  return `${sign}${days > 0 ? days + "." : ""}${pad(h)}:${pad(mi)}:${pad(whole)}${fracStr}`;
+}
+/** Parse "[-][d.]h:m:s[.f]" (or a plain number of days) into seconds. */
+function parseDurationText(txt: string): number | null {
+  const s = txt.trim();
+  const m = s.match(/^(-)?(?:(\d+)\.)?(\d{1,2}):(\d{1,2}):(\d{1,2}(?:\.\d+)?)$/);
+  if (!m) return null;
+  const sign = m[1] ? -1 : 1;
+  const days = m[2] ? Number(m[2]) : 0;
+  return sign * (days * 86400 + Number(m[3]) * 3600 + Number(m[4]) * 60 + Number(m[5]));
+}
+// Windows FILETIME epoch (1601-01-01 UTC) is 11644473600 seconds before the Unix epoch.
+const FILETIME_EPOCH_OFFSET = 11644473600;
 
 export function registerDateTime(env: Env): void {
   const def = (name: string, v: MValue): void => env.defineValue(name, v);
@@ -148,6 +177,10 @@ export function registerDateTime(env: Env): void {
     return text(DAY_NAMES[dayOfWeekSunday0(daysFromCivil(d.y, d.m, d.d))]!);
   }));
   def("Date.MonthName", nn("Date.MonthName", [{ name: "date" }, { name: "culture", optional: true }], (a) => text(MONTH_NAMES[asDateish(a[0]!, "Date.MonthName").m - 1]!)));
+  def("Date.ToRecord", nn("Date.ToRecord", [{ name: "date" }], (a) => {
+    const d = asDateish(a[0]!, "Date.ToRecord");
+    return record([["Year", number(d.y)], ["Month", number(d.m)], ["Day", number(d.d)]]);
+  }));
 
   // List.Dates(start, count, step): count dates starting at `start`, each `step` (a duration) apart.
   def("List.Dates", fn("List.Dates", [{ name: "start" }, { name: "count" }, { name: "step" }], (a) => {
@@ -181,6 +214,30 @@ export function registerDateTime(env: Env): void {
       out.push(datetime(c.y, c.m, c.d, total - days * 86400));
     }
     return { kind: "list", items: out };
+  }));
+  def("List.DateTimeZones", fn("List.DateTimeZones", [{ name: "start" }, { name: "count" }, { name: "step" }], (a) => {
+    const s = a[0]!;
+    if (s.kind !== "datetimezone") err("Expression.Error", "List.DateTimeZones: start must be a datetimezone.");
+    const count = numOf(a[1]!, "count"); const step = a[2]!;
+    if (step.kind !== "duration") err("Expression.Error", "List.DateTimeZones: step must be a duration.");
+    const base = daysFromCivil(s.y, s.m, s.d) * 86400 + s.secs;
+    const out: MValue[] = [];
+    for (let i = 0; i < count; i++) { const total = base + i * step.secs; const days = Math.floor(total / 86400); const c = civilFromDays(days); out.push(datetimezone(c.y, c.m, c.d, total - days * 86400, s.offset)); }
+    return { kind: "list", items: out };
+  }));
+  def("List.Times", fn("List.Times", [{ name: "start" }, { name: "count" }, { name: "step" }], (a) => {
+    const s = a[0]!;
+    if (s.kind !== "time") err("Expression.Error", "List.Times: start must be a time.");
+    const count = numOf(a[1]!, "count"); const step = a[2]!;
+    if (step.kind !== "duration") err("Expression.Error", "List.Times: step must be a duration.");
+    return { kind: "list", items: Array.from({ length: count }, (_, i) => time(((s.secs + i * step.secs) % 86400 + 86400) % 86400)) };
+  }));
+  def("List.Durations", fn("List.Durations", [{ name: "start" }, { name: "count" }, { name: "step" }], (a) => {
+    const s = a[0]!;
+    if (s.kind !== "duration") err("Expression.Error", "List.Durations: start must be a duration.");
+    const count = numOf(a[1]!, "count"); const step = a[2]!;
+    if (step.kind !== "duration") err("Expression.Error", "List.Durations: step must be a duration.");
+    return { kind: "list", items: Array.from({ length: count }, (_, i) => duration(s.secs + i * step.secs)) };
   }));
   def("Date.DaysInMonth", nn("Date.DaysInMonth", [{ name: "date" }], (a) => { const d = asDateish(a[0]!, "Date.DaysInMonth"); return number(daysInMonth(d.y, d.m)); }));
   def("Date.AddQuarters", nn("Date.AddQuarters", [{ name: "date" }, { name: "numberOfQuarters" }], (a) => shift(a[0]!, 0, numOf(a[1]!, "quarters") * 3, 0)));
@@ -286,6 +343,13 @@ export function registerDateTime(env: Env): void {
   def("Time.Hour", timePart("Time.Hour", (s) => Math.floor(s / 3600)));
   def("Time.Minute", timePart("Time.Minute", (s) => Math.floor((s % 3600) / 60)));
   def("Time.Second", timePart("Time.Second", (s) => s % 60));
+  const timeSecs = (v: MValue, who: string): number => (v.kind === "time" ? v.secs : v.kind === "datetime" ? v.secs : err("Expression.Error", `${who}: expected a time or datetime.`));
+  def("Time.StartOfHour", nn("Time.StartOfHour", [{ name: "time" }], (a) => time(Math.floor(timeSecs(a[0]!, "Time.StartOfHour") / 3600) * 3600)));
+  def("Time.EndOfHour", nn("Time.EndOfHour", [{ name: "time" }], (a) => time(Math.floor(timeSecs(a[0]!, "Time.EndOfHour") / 3600) * 3600 + 3599)));
+  def("Time.ToRecord", nn("Time.ToRecord", [{ name: "time" }], (a) => {
+    const s = timeSecs(a[0]!, "Time.ToRecord");
+    return record([["Hour", number(Math.floor(s / 3600))], ["Minute", number(Math.floor((s % 3600) / 60))], ["Second", number(s % 60)]]);
+  }));
   def("Time.ToText", nn("Time.ToText", [{ name: "time" }, { name: "format", optional: true }, { name: "culture", optional: true }], (a) => {
     const v = a[0]!;
     if (v.kind !== "time") err("Expression.Error", "Time.ToText: expected a time.");
@@ -327,11 +391,49 @@ export function registerDateTime(env: Env): void {
     if (f !== null) return text(applyDateTimeFormat(f, { y: v.y, mo: v.m, d: v.d, secs: v.secs }, { date: true, time: true }));
     return text(usDateTime(v.y, v.m, v.d, v.secs));
   }));
+  def("DateTime.FromText", nn("DateTime.FromText", [{ name: "text" }, { name: "options", optional: true }], (a) => {
+    const p = parseDateTimeText(expectText(a[0]!, "DateTime.FromText"));
+    if (!p) err("Expression.Error", `DateTime.FromText: cannot convert "${expectText(a[0]!, "DateTime.FromText")}".`);
+    return datetime(p.y, p.m, p.d, p.secs);
+  }));
+  def("DateTime.ToRecord", nn("DateTime.ToRecord", [{ name: "dateTime" }], (a) => {
+    const v = a[0]!; if (v.kind !== "datetime") err("Expression.Error", "DateTime.ToRecord: expected a datetime.");
+    return record([["Year", number(v.y)], ["Month", number(v.m)], ["Day", number(v.d)], ["Hour", number(Math.floor(v.secs / 3600))], ["Minute", number(Math.floor((v.secs % 3600) / 60))], ["Second", number(v.secs % 60)]]);
+  }));
+  def("DateTime.AddZone", nn("DateTime.AddZone", [{ name: "dateTime" }, { name: "timezoneHours" }, { name: "timezoneMinutes", optional: true }], (a) => {
+    const v = a[0]!; if (v.kind !== "datetime") err("Expression.Error", "DateTime.AddZone: expected a datetime.");
+    const oh = numOf(a[1]!, "timezoneHours"); const om = a[2] && a[2].kind === "number" ? a[2].value : 0;
+    return datetimezone(v.y, v.m, v.d, v.secs, oh * 60 + (oh < 0 ? -Math.abs(om) : om));
+  }));
+  def("DateTime.FromFileTime", nn("DateTime.FromFileTime", [{ name: "fileTime" }], (a) => {
+    const secs = numOf(a[0]!, "DateTime.FromFileTime") / 1e7 - FILETIME_EPOCH_OFFSET; // 100ns ticks since 1601 UTC
+    const f = nowFieldsFromEpoch(secs);
+    return datetime(f.y, f.mo, f.day, f.secs);
+  }));
+
   // "Now" is the run's fixed clock (Excel fixes it once per refresh). Local uses the run's
   // captured timezone offset; both LocalNow and FixedLocalNow return that same fixed instant.
   const localNow = (): MValue => { const f = localNowFields(); return datetime(f.y, f.mo, f.day, f.secs); };
   def("DateTime.LocalNow", fn("DateTime.LocalNow", [], localNow));
   def("DateTime.FixedLocalNow", fn("DateTime.FixedLocalNow", [], localNow));
+
+  // Relative-time family (clock-dependent), parallel to the relative-date family. "Current"
+  // instant is the run's fixed local now; Previous/Next exclude the current hour/minute/second.
+  const nowSecEpoch = (): number => currentClockMs() / 1000 + currentOffsetMinutes() * 60;
+  const dtEpoch = (v: MValue, who: string): number => { const d = asDateish(v, who); return daysFromCivil(d.y, d.m, d.d) * 86400 + d.secs; };
+  const relT = (name: string, unit: number, lo: (n: number) => number, hi: (n: number) => number): void =>
+    def(name, nn(name, [{ name: "dateTime" }, { name: "count", optional: true }], (a) => {
+      const t = Math.floor(nowSecEpoch() / unit); const b = Math.floor(dtEpoch(a[0]!, name) / unit);
+      const n = a[1] && a[1].kind === "number" ? a[1].value : 1;
+      return logical(b >= t + lo(n) && b <= t + hi(n));
+    }));
+  for (const [u, unit] of [["Hour", 3600], ["Minute", 60], ["Second", 1]] as const) {
+    relT(`DateTime.IsInCurrent${u}`, unit, () => 0, () => 0);
+    relT(`DateTime.IsInPrevious${u}`, unit, () => -1, () => -1);
+    relT(`DateTime.IsInNext${u}`, unit, () => 1, () => 1);
+    relT(`DateTime.IsInPreviousN${u}s`, unit, (n) => -n, () => -1);
+    relT(`DateTime.IsInNextN${u}s`, unit, () => 1, (n) => n);
+  }
 
   // --- DateTimeZone.* ----------------------------------------------------------------
   def("#datetimezone", fn("#datetimezone", [{ name: "year" }, { name: "month" }, { name: "day" }, { name: "hour" }, { name: "minute" }, { name: "second" }, { name: "offsetHours" }, { name: "offsetMinutes" }], (a) => {
@@ -370,7 +472,30 @@ export function registerDateTime(env: Env): void {
     const target = th * 60 + (a[2] && a[2].kind === "number" ? (th < 0 ? -Math.abs(a[2].value) : a[2].value) : 0);
     return shiftZone(v, target);
   }));
-  def("DateTimeZone.ToLocal", nn("DateTimeZone.ToLocal", [{ name: "dateTimeZone" }], () => err("Expression.Error", "mlang: DateTimeZone.ToLocal needs a local zone (deterministic engine).")));
+  // ToLocal: re-express the instant in the run's local zone, then drop the zone (-> datetime).
+  def("DateTimeZone.ToLocal", nn("DateTimeZone.ToLocal", [{ name: "dateTimeZone" }], (a) => {
+    const shifted = shiftZone(asDtz(a[0]!, "DateTimeZone.ToLocal"), currentOffsetMinutes());
+    return shifted.kind === "datetimezone" ? datetime(shifted.y, shifted.m, shifted.d, shifted.secs) : shifted;
+  }));
+  def("DateTimeZone.FromText", nn("DateTimeZone.FromText", [{ name: "text" }, { name: "options", optional: true }], (a) => {
+    const p = parseDateTimeZoneText(expectText(a[0]!, "DateTimeZone.FromText"));
+    if (!p) err("Expression.Error", `DateTimeZone.FromText: cannot convert "${expectText(a[0]!, "DateTimeZone.FromText")}".`);
+    return datetimezone(p.y, p.m, p.d, p.secs, p.offset);
+  }));
+  def("DateTimeZone.FromFileTime", nn("DateTimeZone.FromFileTime", [{ name: "fileTime" }], (a) => {
+    const f = nowFieldsFromEpoch(numOf(a[0]!, "DateTimeZone.FromFileTime") / 1e7 - FILETIME_EPOCH_OFFSET);
+    return datetimezone(f.y, f.mo, f.day, f.secs, 0); // FILETIME is UTC
+  }));
+  def("DateTimeZone.ToRecord", nn("DateTimeZone.ToRecord", [{ name: "dateTimeZone" }], (a) => {
+    const v = asDtz(a[0]!, "DateTimeZone.ToRecord");
+    return record([["Year", number(v.y)], ["Month", number(v.m)], ["Day", number(v.d)], ["Hour", number(Math.floor(v.secs / 3600))], ["Minute", number(Math.floor((v.secs % 3600) / 60))], ["Second", number(v.secs % 60)], ["ZoneHours", number(Math.trunc(v.offset / 60))], ["ZoneMinutes", number(v.offset % 60)]]);
+  }));
+  def("DateTimeZone.ToText", nn("DateTimeZone.ToText", [{ name: "dateTimeZone" }, { name: "format", optional: true }, { name: "culture", optional: true }], (a) => {
+    const v = asDtz(a[0]!, "DateTimeZone.ToText");
+    const sign = v.offset < 0 ? "-" : "+"; const ao = Math.abs(v.offset);
+    const off = `${sign}${String(Math.trunc(ao / 60)).padStart(2, "0")}:${String(ao % 60).padStart(2, "0")}`;
+    return text(`${usDateTime(v.y, v.m, v.d, v.secs)} ${off}`);
+  }));
   const utcNow = (): MValue => { const f = utcNowFields(); return datetimezone(f.y, f.mo, f.day, f.secs, 0); };
   const localNowZ = (): MValue => { const f = localNowFields(); return datetimezone(f.y, f.mo, f.day, f.secs, currentOffsetMinutes()); };
   for (const now of ["DateTimeZone.UtcNow", "DateTimeZone.FixedUtcNow"]) def(now, fn(now, [], utcNow));
@@ -397,6 +522,20 @@ export function registerDateTime(env: Env): void {
   def("Duration.TotalHours", durPart("Duration.TotalHours", (s) => s / 3600));
   def("Duration.TotalMinutes", durPart("Duration.TotalMinutes", (s) => s / 60));
   def("Duration.TotalSeconds", durPart("Duration.TotalSeconds", (s) => s));
+  def("Duration.ToRecord", nn("Duration.ToRecord", [{ name: "duration" }], (a) => {
+    const v = a[0]!; if (v.kind !== "duration") err("Expression.Error", "Duration.ToRecord: expected a duration.");
+    const sign = v.secs < 0 ? -1 : 1; const s = Math.abs(v.secs);
+    return record([["Days", number(sign * Math.trunc(s / 86400))], ["Hours", number(Math.trunc((s % 86400) / 3600))], ["Minutes", number(Math.trunc((s % 3600) / 60))], ["Seconds", number(s % 60)]]);
+  }));
+  def("Duration.ToText", nn("Duration.ToText", [{ name: "duration" }, { name: "format", optional: true }], (a) => {
+    const v = a[0]!; if (v.kind !== "duration") err("Expression.Error", "Duration.ToText: expected a duration.");
+    return text(durationToText(v.secs));
+  }));
+  def("Duration.FromText", nn("Duration.FromText", [{ name: "text" }], (a) => {
+    const secs = parseDurationText(expectText(a[0]!, "Duration.FromText"));
+    if (secs === null) err("Expression.Error", `Duration.FromText: cannot parse "${expectText(a[0]!, "Duration.FromText")}".`);
+    return duration(secs);
+  }));
 
   // Serial conversion for hosts (sheetedit turns date-formatted cells into datetimes).
   def("Number.FromDateTime", nn("Number.FromDateTime", [{ name: "value" }], (a) => {

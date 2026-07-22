@@ -1,6 +1,6 @@
 // List.* functions.
 import type { Env } from "../interpret.js";
-import { NULL, equals, err, list, logical, number, type MValue } from "../values.js";
+import { NULL, equals, err, expect, list, logical, number, type MValue } from "../values.js";
 import { callFn, cmpWithNulls, fn, listOf, numOf, truthy } from "./helpers.js";
 import { nextRandom } from "../async-runtime.js";
 
@@ -74,6 +74,86 @@ export function registerList(env: Env): void {
   def("List.ContainsAny", fn("List.ContainsAny", [{ name: "list" }, { name: "values" }, { name: "equationCriteria", optional: true }], (a) => {
     const items = listOf(a[0]!, "List.ContainsAny");
     return logical(listOf(a[1]!, "List.ContainsAny values").some((val) => items.some((v) => equals(v, val))));
+  }));
+  def("List.PositionOfAny", fn("List.PositionOfAny", [{ name: "list" }, { name: "values" }, { name: "occurrence", optional: true }, { name: "equationCriteria", optional: true }], (a) => {
+    const items = listOf(a[0]!, "List.PositionOfAny");
+    const vals = listOf(a[1]!, "List.PositionOfAny values");
+    const occ = a[2] && a[2].kind === "number" ? a[2].value : 0;
+    const hits = items.map((v, i) => (vals.some((x) => equals(v, x)) ? i : -1)).filter((i) => i >= 0);
+    if (occ === 2) return list(hits.map(number));
+    return number(occ === 1 ? (hits[hits.length - 1] ?? -1) : (hits[0] ?? -1));
+  }));
+  def("List.IsDistinct", fn("List.IsDistinct", [{ name: "list" }, { name: "equationCriteria", optional: true }], (a) => {
+    const items = listOf(a[0]!, "List.IsDistinct");
+    for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) if (equals(items[i]!, items[j]!)) return logical(false);
+    return logical(true);
+  }));
+  def("List.NonNullCount", fn("List.NonNullCount", [{ name: "list" }], (a) => number(listOf(a[0]!, "List.NonNullCount").filter((v) => v.kind !== "null").length)));
+  def("List.MatchesAll", fn("List.MatchesAll", [{ name: "list" }, { name: "condition" }], (a) => logical(listOf(a[0]!, "List.MatchesAll").every((v) => truthy(callFn(a[1]!, [v]))))));
+  def("List.MatchesAny", fn("List.MatchesAny", [{ name: "list" }, { name: "condition" }], (a) => logical(listOf(a[0]!, "List.MatchesAny").some((v) => truthy(callFn(a[1]!, [v]))))));
+  def("List.FindText", fn("List.FindText", [{ name: "list" }, { name: "text" }], (a) => {
+    const needle = expect(a[1]!, "text", "List.FindText").value;
+    const has = (v: MValue): boolean =>
+      v.kind === "text" ? v.value.includes(needle)
+        : v.kind === "record" ? [...v.fields.values()].some(has)
+          : v.kind === "list" ? v.items.some(has) : false;
+    return list(listOf(a[0]!, "List.FindText").filter(has));
+  }));
+  // Positional edits: insert/remove/replace a contiguous range.
+  def("List.InsertRange", fn("List.InsertRange", [{ name: "list" }, { name: "index" }, { name: "values" }], (a) => {
+    const items = listOf(a[0]!, "List.InsertRange").slice();
+    items.splice(numOf(a[1]!, "index"), 0, ...listOf(a[2]!, "List.InsertRange values"));
+    return list(items);
+  }));
+  def("List.RemoveRange", fn("List.RemoveRange", [{ name: "list" }, { name: "index" }, { name: "count", optional: true }], (a) => {
+    const items = listOf(a[0]!, "List.RemoveRange").slice();
+    items.splice(numOf(a[1]!, "index"), a[2] && a[2].kind === "number" ? a[2].value : 1);
+    return list(items);
+  }));
+  def("List.ReplaceRange", fn("List.ReplaceRange", [{ name: "list" }, { name: "index" }, { name: "count" }, { name: "replaceWith" }], (a) => {
+    const items = listOf(a[0]!, "List.ReplaceRange").slice();
+    items.splice(numOf(a[1]!, "index"), numOf(a[2]!, "count"), ...listOf(a[3]!, "List.ReplaceRange replaceWith"));
+    return list(items);
+  }));
+  def("List.ReplaceValue", fn("List.ReplaceValue", [{ name: "list" }, { name: "oldValue" }, { name: "newValue" }, { name: "replacer", optional: true }], (a) => {
+    if (a[3] && a[3].kind === "function") return list(listOf(a[0]!, "List.ReplaceValue").map((v) => callFn(a[3]!, [v, a[1]!, a[2]!])));
+    return list(listOf(a[0]!, "List.ReplaceValue").map((v) => (equals(v, a[1]!) ? a[2]! : v)));
+  }));
+  // Statistics: mode(s), covariance, percentile (ExcelInc default; ExcelExc supported).
+  const modeCounts = (items: MValue[]): { v: MValue; n: number }[] => {
+    const groups: { v: MValue; n: number }[] = [];
+    for (const it of items) { if (it.kind === "null") continue; const g = groups.find((x) => equals(x.v, it)); if (g) g.n++; else groups.push({ v: it, n: 1 }); }
+    return groups;
+  };
+  def("List.Mode", fn("List.Mode", [{ name: "list" }, { name: "equationCriteria", optional: true }], (a) => {
+    const g = modeCounts(listOf(a[0]!, "List.Mode")); if (!g.length) return NULL;
+    return g.reduce((best, x) => (x.n > best.n ? x : best)).v;
+  }));
+  def("List.Modes", fn("List.Modes", [{ name: "list" }, { name: "equationCriteria", optional: true }], (a) => {
+    const g = modeCounts(listOf(a[0]!, "List.Modes")); const max = g.reduce((m, x) => Math.max(m, x.n), 0);
+    return list(g.filter((x) => x.n === max).map((x) => x.v));
+  }));
+  def("List.Covariance", fn("List.Covariance", [{ name: "list1" }, { name: "list2" }], (a) => {
+    const xs = listOf(a[0]!, "List.Covariance").map((v) => numOf(v, "List.Covariance")), ys = listOf(a[1]!, "List.Covariance").map((v) => numOf(v, "List.Covariance"));
+    const n = Math.min(xs.length, ys.length); if (n === 0) return NULL;
+    const mx = xs.reduce((s, x) => s + x, 0) / n, my = ys.reduce((s, y) => s + y, 0) / n;
+    let cov = 0; for (let i = 0; i < n; i++) cov += (xs[i]! - mx) * (ys[i]! - my);
+    return number(cov / n);
+  }));
+  const percentile = (sorted: number[], p: number, exc: boolean): number => {
+    const n = sorted.length;
+    const rank = exc ? p * (n + 1) - 1 : p * (n - 1); // 0-based fractional index
+    if (rank <= 0) return sorted[0]!;
+    if (rank >= n - 1) return sorted[n - 1]!;
+    const lo = Math.floor(rank), frac = rank - lo;
+    return sorted[lo]! + frac * (sorted[lo + 1]! - sorted[lo]!);
+  };
+  def("List.Percentile", fn("List.Percentile", [{ name: "list" }, { name: "percentiles" }, { name: "options", optional: true }], (a) => {
+    const sorted = listOf(a[0]!, "List.Percentile").filter((v) => v.kind !== "null").map((v) => numOf(v, "List.Percentile")).sort((x, y) => x - y);
+    if (!sorted.length) return NULL;
+    const opt = a[2]; const exc = opt?.kind === "record" && opt.fields.get("PercentileMode")?.kind === "number" && (opt.fields.get("PercentileMode") as { value: number }).value === 1;
+    const one = (p: number): MValue => number(percentile(sorted, p, exc));
+    return a[1]!.kind === "list" ? list(a[1]!.items.map((p) => one(numOf(p, "percentile")))) : one(numOf(a[1]!, "percentile"));
   }));
 
   def("List.First", fn("List.First", [{ name: "list" }, { name: "default", optional: true }], (a) => {

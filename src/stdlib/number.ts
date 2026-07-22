@@ -50,6 +50,16 @@ export function registerNumber(env: Env): void {
   intFrom("Int8.From");
   intFrom("Int16.From");
   intFrom("Int32.From");
+  // Float conversions: keep the fractional part. Single truncates to 32-bit float precision;
+  // Currency rounds to 4 decimals (money scale).
+  const floatFrom = (name: string, map: (x: number) => number): void => def(name, fn(name, [{ name: "value" }, { name: "culture", optional: true }], (a) => {
+    const v = numberFrom(a[0]!, cultureOf(a[1]?.kind === "text" ? a[1].value : null));
+    return v.kind === "number" ? number(map(v.value)) : v;
+  }));
+  floatFrom("Double.From", (x) => x);
+  floatFrom("Decimal.From", (x) => x);
+  floatFrom("Single.From", (x) => Math.fround(x));
+  floatFrom("Currency.From", (x) => roundToEven(x, 4));
   def("Percentage.From", fn("Percentage.From", [{ name: "value" }, { name: "culture", optional: true }], (a) => {
     if (a[0]!.kind === "text") { const s = a[0]!.value.trim(); if (s.endsWith("%")) { const n = Number(s.slice(0, -1)); return Number.isNaN(n) ? err("Expression.Error", "Percentage.From: invalid value.") : number(n / 100); } }
     return numberFrom(a[0]!, cultureOf(a[1]?.kind === "text" ? a[1].value : null));
@@ -77,7 +87,18 @@ export function registerNumber(env: Env): void {
   unary("Number.Tanh", Math.tanh);
   def("Number.Log", nn("Number.Log", [{ name: "number" }, { name: "base", optional: true }], (a) => number(Math.log(numOf(a[0]!, "Number.Log")) / Math.log(a[1] && a[1].kind === "number" ? a[1].value : 10))));
   def("Number.Atan2", fn("Number.Atan2", [{ name: "y" }, { name: "x" }], (a) => number(Math.atan2(numOf(a[0]!, "Number.Atan2"), numOf(a[1]!, "Number.Atan2")))));
-  def("Number.Factorial", nn("Number.Factorial", [{ name: "number" }], (a) => { let n = Math.round(numOf(a[0]!, "Number.Factorial")); let r = 1; for (; n > 1; n--) r *= n; return number(r); }));
+  const factorial = (n: number): number => { let r = 1; for (let i = 2; i <= n; i++) r *= i; return r; };
+  def("Number.Factorial", nn("Number.Factorial", [{ name: "number" }], (a) => number(factorial(Math.round(numOf(a[0]!, "Number.Factorial"))))));
+  def("Number.Combinations", nn("Number.Combinations", [{ name: "setSize" }, { name: "combinationSize" }], (a) => {
+    const n = Math.round(numOf(a[0]!, "Number.Combinations")), k = Math.round(numOf(a[1]!, "Number.Combinations"));
+    if (k < 0 || k > n) return number(0);
+    let r = 1; for (let i = 0; i < k; i++) r = (r * (n - i)) / (i + 1); return number(Math.round(r));
+  }));
+  def("Number.Permutations", nn("Number.Permutations", [{ name: "setSize" }, { name: "permutationSize" }], (a) => {
+    const n = Math.round(numOf(a[0]!, "Number.Permutations")), k = Math.round(numOf(a[1]!, "Number.Permutations"));
+    if (k < 0 || k > n) return number(0);
+    let r = 1; for (let i = 0; i < k; i++) r *= n - i; return number(r);
+  }));
   const bit = (name: string, f: (a: number, b: number) => number): void => def(name, fn(name, [{ name: "number1" }, { name: "number2" }], (a) => number(f(numOf(a[0]!, name), numOf(a[1]!, name)))));
   bit("Number.BitwiseAnd", (x, y) => x & y);
   bit("Number.BitwiseOr", (x, y) => x | y);
@@ -112,6 +133,16 @@ export function registerNumber(env: Env): void {
   def("Number.RoundUp", nn("Number.RoundUp", [{ name: "number" }, { name: "digits", optional: true }], (a) => {
     const scale = Math.pow(10, a[1] && a[1].kind === "number" ? a[1].value : 0);
     return number(Math.ceil(numOf(a[0]!, "Number.RoundUp") * scale) / scale);
+  }));
+  def("Number.RoundAwayFromZero", nn("Number.RoundAwayFromZero", [{ name: "number" }, { name: "digits", optional: true }], (a) => {
+    const scale = Math.pow(10, a[1] && a[1].kind === "number" ? a[1].value : 0);
+    const x = numOf(a[0]!, "Number.RoundAwayFromZero");
+    return number((x >= 0 ? Math.ceil(x * scale) : Math.floor(x * scale)) / scale);
+  }));
+  def("Number.RoundTowardZero", nn("Number.RoundTowardZero", [{ name: "number" }, { name: "digits", optional: true }], (a) => {
+    const scale = Math.pow(10, a[1] && a[1].kind === "number" ? a[1].value : 0);
+    const x = numOf(a[0]!, "Number.RoundTowardZero");
+    return number((x >= 0 ? Math.floor(x * scale) : Math.ceil(x * scale)) / scale);
   }));
 
   def("Number.IntegerDivide", nn("Number.IntegerDivide", [{ name: "number1" }, { name: "number2" }], (a) => {

@@ -2,7 +2,7 @@
 // yet raise precise "unsupported" errors rather than approximating.
 import type { Env } from "../interpret.js";
 import { MError, NULL, equals as equalsCell, err, errorValue, expect, list, logical, number, rowRecord, table, text, type MType, type MValue } from "../values.js";
-import { asTable, callFn, cmpWithNulls, colIndex, colNamesFromSpec, fn, keyOf, listOf, namesOf, pairList, subTable, textOf, truthy, type Table } from "./helpers.js";
+import { asTable, callFn, cmpWithNulls, colIndex, colNamesFromSpec, fn, keyOf, listOf, namesOf, numOf, pairList, subTable, textOf, truthy, type Table } from "./helpers.js";
 import { convertTo, textFrom } from "./convert.js";
 import { typeName } from "../types.js";
 
@@ -335,6 +335,161 @@ export function registerTable(env: Env): void {
       return x.i - y.i;
     });
     return table(t.columns, rows.map((x) => x.r), t.types);
+  }));
+
+  // A row comparator from a comparisonCriteria value: column name, {name, Order.*} pair,
+  // a key-selector function(row), or a full comparator function(row1, row2).
+  const rowCmp = (t: Table, crit: MValue): ((ia: number, ib: number) => number) => {
+    if (crit.kind === "function") {
+      if (crit.params.length >= 2) return (ia, ib) => { const r = crit.call([rowRecord(t, ia), rowRecord(t, ib)]); return r.kind === "number" ? r.value : 0; };
+      return (ia, ib) => cmpWithNulls(crit.call([rowRecord(t, ia)]), crit.call([rowRecord(t, ib)]));
+    }
+    if (crit.kind === "text") { const ci = colIndex(t, crit.value); return (ia, ib) => cmpWithNulls(t.rows[ia]![ci] ?? NULL, t.rows[ib]![ci] ?? NULL); }
+    if (crit.kind === "list" && crit.items.length === 2 && crit.items[0]!.kind === "text" && crit.items[1]!.kind === "number") {
+      const ci = colIndex(t, crit.items[0]!.value); const desc = crit.items[1]!.value === 1;
+      return (ia, ib) => { const c = cmpWithNulls(t.rows[ia]![ci] ?? NULL, t.rows[ib]![ci] ?? NULL); return desc ? -c : c; };
+    }
+    err("Expression.Error", "comparisonCriteria: use a column name, {name, Order.*}, or a function.");
+  };
+  const matchRow = (t: Table, i: number, rec: MValue): boolean =>
+    rec.kind === "record" && [...rec.fields].every(([k, v]) => { const ci = t.columns.indexOf(k); return ci >= 0 && equalsCell(t.rows[i]![ci] ?? NULL, v); });
+
+  def("Table.ReverseRows", fn("Table.ReverseRows", [{ name: "table" }], (a) => { const t = asTable(a[0]!, "Table.ReverseRows"); return subTable(t, t.rows.map((_, i) => t.rows.length - 1 - i)); }));
+  def("Table.ApproximateRowCount", fn("Table.ApproximateRowCount", [{ name: "table" }], (a) => number(asTable(a[0]!, "Table.ApproximateRowCount").rows.length)));
+  def("Table.Range", fn("Table.Range", [{ name: "table" }, { name: "offset" }, { name: "count", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.Range"); const off = numOf(a[1]!, "offset");
+    const end = a[2] && a[2].kind === "number" ? off + a[2].value : t.rows.length;
+    return subTable(t, t.rows.map((_, i) => i).slice(off, end));
+  }));
+  def("Table.RemoveRows", fn("Table.RemoveRows", [{ name: "table" }, { name: "offset" }, { name: "count", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.RemoveRows"); const off = numOf(a[1]!, "offset");
+    const count = a[2] && a[2].kind === "number" ? a[2].value : 1;
+    return subTable(t, t.rows.map((_, i) => i).filter((i) => i < off || i >= off + count));
+  }));
+  def("Table.InsertRows", fn("Table.InsertRows", [{ name: "table" }, { name: "offset" }, { name: "rows" }], (a) => {
+    const t = asTable(a[0]!, "Table.InsertRows"); const off = numOf(a[1]!, "offset");
+    const newRows = listOf(a[2]!, "Table.InsertRows rows").map((rec) => t.columns.map((c) => (rec.kind === "record" ? rec.fields.get(c) ?? NULL : NULL)));
+    const rows = t.rows.slice(); rows.splice(off, 0, ...newRows);
+    return table(t.columns, rows, t.types);
+  }));
+  def("Table.ReplaceRows", fn("Table.ReplaceRows", [{ name: "table" }, { name: "offset" }, { name: "count" }, { name: "rows" }], (a) => {
+    const t = asTable(a[0]!, "Table.ReplaceRows"); const off = numOf(a[1]!, "offset");
+    const newRows = listOf(a[3]!, "Table.ReplaceRows rows").map((rec) => t.columns.map((c) => (rec.kind === "record" ? rec.fields.get(c) ?? NULL : NULL)));
+    const rows = t.rows.slice(); rows.splice(off, numOf(a[2]!, "count"), ...newRows);
+    return table(t.columns, rows, t.types);
+  }));
+  def("Table.ReplaceMatchingRows", fn("Table.ReplaceMatchingRows", [{ name: "table" }, { name: "replacements" }, { name: "equationCriteria", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.ReplaceMatchingRows");
+    const reps = listOf(a[1]!, "Table.ReplaceMatchingRows replacements").map((p) => listOf(p, "replacement"));
+    const rowRec = (rec: MValue): MValue[] => t.columns.map((c) => (rec.kind === "record" ? rec.fields.get(c) ?? NULL : NULL));
+    const rows = t.rows.map((_, i) => { const hit = reps.find(([oldR]) => matchRow(t, i, oldR!)); return hit ? rowRec(hit[1]!) : t.rows[i]!; });
+    return table(t.columns, rows, t.types);
+  }));
+  def("Table.AlternateRows", fn("Table.AlternateRows", [{ name: "table" }, { name: "offset" }, { name: "skip" }, { name: "take" }], (a) => {
+    const t = asTable(a[0]!, "Table.AlternateRows");
+    const off = numOf(a[1]!, "offset"), skip = numOf(a[2]!, "skip"), take = numOf(a[3]!, "take");
+    const keep: number[] = [];
+    for (let i = 0; i < off && i < t.rows.length; i++) keep.push(i);
+    let i = off; const period = skip + take;
+    while (i < t.rows.length) { const pos = (i - off) % period; if (pos >= skip) keep.push(i); i++; if (period <= 0) break; }
+    return subTable(t, keep);
+  }));
+  def("Table.SplitAt", fn("Table.SplitAt", [{ name: "table" }, { name: "count" }], (a) => {
+    const t = asTable(a[0]!, "Table.SplitAt"); const n = numOf(a[1]!, "count");
+    return list([subTable(t, t.rows.map((_, i) => i).slice(0, n)), subTable(t, t.rows.map((_, i) => i).slice(n))]);
+  }));
+  def("Table.FirstValue", fn("Table.FirstValue", [{ name: "table" }, { name: "default", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.FirstValue");
+    return t.rows.length && t.columns.length ? (t.rows[0]![0] ?? NULL) : (a[1] ?? NULL);
+  }));
+  def("Table.ToList", fn("Table.ToList", [{ name: "table" }, { name: "combiner", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.ToList");
+    return list(t.rows.map((r) => {
+      const cells = t.columns.map((_, ci) => r[ci] ?? NULL);
+      return a[1] && a[1].kind === "function" ? callFn(a[1], [list(cells)]) : text(cells.map((c) => textFrom(c)).join(","));
+    }));
+  }));
+  def("Table.Keys", fn("Table.Keys", [{ name: "table" }], (a) => { asTable(a[0]!, "Table.Keys"); return list([]); }));
+  def("Table.MatchesAllRows", fn("Table.MatchesAllRows", [{ name: "table" }, { name: "condition" }], (a) => { const t = asTable(a[0]!, "Table.MatchesAllRows"); return logical(t.rows.every((_, i) => truthy(callFn(a[1]!, [rowRecord(t, i)])))); }));
+  def("Table.MatchesAnyRows", fn("Table.MatchesAnyRows", [{ name: "table" }, { name: "condition" }], (a) => { const t = asTable(a[0]!, "Table.MatchesAnyRows"); return logical(t.rows.some((_, i) => truthy(callFn(a[1]!, [rowRecord(t, i)])))); }));
+  def("Table.Contains", fn("Table.Contains", [{ name: "table" }, { name: "row" }, { name: "equationCriteria", optional: true }], (a) => { const t = asTable(a[0]!, "Table.Contains"); return logical(t.rows.some((_, i) => matchRow(t, i, a[1]!))); }));
+  def("Table.ContainsAll", fn("Table.ContainsAll", [{ name: "table" }, { name: "rows" }, { name: "equationCriteria", optional: true }], (a) => { const t = asTable(a[0]!, "Table.ContainsAll"); return logical(listOf(a[1]!, "rows").every((rec) => t.rows.some((_, i) => matchRow(t, i, rec)))); }));
+  def("Table.ContainsAny", fn("Table.ContainsAny", [{ name: "table" }, { name: "rows" }, { name: "equationCriteria", optional: true }], (a) => { const t = asTable(a[0]!, "Table.ContainsAny"); return logical(listOf(a[1]!, "rows").some((rec) => t.rows.some((_, i) => matchRow(t, i, rec)))); }));
+  def("Table.PositionOf", fn("Table.PositionOf", [{ name: "table" }, { name: "row" }, { name: "occurrence", optional: true }, { name: "equationCriteria", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.PositionOf"); const occ = a[2] && a[2].kind === "number" ? a[2].value : 0;
+    const hits = t.rows.map((_, i) => i).filter((i) => matchRow(t, i, a[1]!));
+    if (occ === 2) return list(hits.map(number));
+    return number(occ === 1 ? (hits[hits.length - 1] ?? -1) : (hits[0] ?? -1));
+  }));
+  def("Table.PositionOfAny", fn("Table.PositionOfAny", [{ name: "table" }, { name: "rows" }, { name: "occurrence", optional: true }, { name: "equationCriteria", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.PositionOfAny"); const recs = listOf(a[1]!, "rows"); const occ = a[2] && a[2].kind === "number" ? a[2].value : 0;
+    const hits = t.rows.map((_, i) => i).filter((i) => recs.some((rec) => matchRow(t, i, rec)));
+    if (occ === 2) return list(hits.map(number));
+    return number(occ === 1 ? (hits[hits.length - 1] ?? -1) : (hits[0] ?? -1));
+  }));
+  def("Table.FindText", fn("Table.FindText", [{ name: "table" }, { name: "text" }], (a) => {
+    const t = asTable(a[0]!, "Table.FindText"); const needle = textOf(a[1]!, "Table.FindText");
+    return subTable(t, rowsWhere(t, (i) => t.rows[i]!.some((c) => c.kind === "text" && c.value.includes(needle))));
+  }));
+  // Max/Min (single row or default) and MaxN/MinN (a table) by comparisonCriteria.
+  const extreme = (name: string, sign: number) => fn(name, [{ name: "table" }, { name: "comparisonCriteria" }, { name: "default", optional: true }], (a) => {
+    const t = asTable(a[0]!, name); if (!t.rows.length) return a[2] ?? NULL;
+    const cmp = rowCmp(t, a[1]!);
+    let best = 0; for (let i = 1; i < t.rows.length; i++) if (sign * cmp(i, best) > 0) best = i;
+    return rowRecord(t, best);
+  });
+  def("Table.Max", extreme("Table.Max", 1));
+  def("Table.Min", extreme("Table.Min", -1));
+  const extremeN = (name: string, sign: number) => fn(name, [{ name: "table" }, { name: "comparisonCriteria" }, { name: "countOrCondition" }], (a) => {
+    const t = asTable(a[0]!, name); const cmp = rowCmp(t, a[1]!);
+    const order = t.rows.map((_, i) => i).sort((ia, ib) => -sign * cmp(ia, ib)); // best first
+    const cond = a[2]!;
+    const keep = cond.kind === "number" ? order.slice(0, cond.value) : order.filter((i) => truthy(callFn(cond, [rowRecord(t, i)])));
+    return subTable(t, keep);
+  });
+  def("Table.MaxN", extremeN("Table.MaxN", 1));
+  def("Table.MinN", extremeN("Table.MinN", -1));
+  def("Table.AddRankColumn", fn("Table.AddRankColumn", [{ name: "table" }, { name: "newColumnName" }, { name: "comparisonCriteria" }, { name: "options", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.AddRankColumn"); const name = textOf(a[1]!, "newColumnName");
+    const cmp = rowCmp(t, a[2]!);
+    const kind = a[3]?.kind === "record" && a[3].fields.get("RankKind")?.kind === "number" ? (a[3].fields.get("RankKind") as { value: number }).value : 0;
+    const order = t.rows.map((_, i) => i).sort((ia, ib) => cmp(ia, ib)); // criteria order (rank 1 first)
+    const rankOf = new Map<number, number>();
+    let prev = 0;
+    order.forEach((idx, pos) => {
+      let rank: number;
+      if (pos > 0 && cmp(order[pos - 1]!, idx) === 0 && kind !== 2) rank = prev; // tie (not Ordinal)
+      else rank = kind === 1 ? (pos > 0 ? prev + (cmp(order[pos - 1]!, idx) === 0 ? 0 : 1) : 1) : pos + 1; // Dense vs Competition/Ordinal
+      rankOf.set(idx, rank); prev = rank;
+    });
+    return table([...t.columns, name], t.rows.map((r, i) => [...r, number(rankOf.get(i)!)]), t.types);
+  }));
+  def("Table.CombineColumnsToRecord", fn("Table.CombineColumnsToRecord", [{ name: "table" }, { name: "newColumnName" }, { name: "columnsToCombine" }, { name: "options", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.CombineColumnsToRecord"); const name = textOf(a[1]!, "newColumnName");
+    const cols = namesOf(a[2]!, "columnsToCombine"); const idx = cols.map((c) => colIndex(t, c));
+    const first = Math.min(...idx); const keep = t.columns.map((_, i) => i).filter((i) => !idx.includes(i));
+    const insertAt = keep.filter((i) => i < first).length;
+    const outCols = keep.map((i) => t.columns[i]!); outCols.splice(insertAt, 0, name);
+    const rows = t.rows.map((r) => { const rec: MValue = { kind: "record", fields: new Map(cols.map((c, k) => [c, r[idx[k]!] ?? NULL])) }; const out = keep.map((i) => r[i] ?? NULL); out.splice(insertAt, 0, rec); return out; });
+    return table(outCols, rows);
+  }));
+  def("Table.Profile", fn("Table.Profile", [{ name: "table" }, { name: "additionalAggregates", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.Profile");
+    const cols = ["Column", "Min", "Max", "Average", "StandardDeviation", "Count", "NullCount", "DistinctCount"];
+    const rows = t.columns.map((c, ci) => {
+      const cells = t.rows.map((r) => r[ci] ?? NULL);
+      const nums = cells.filter((v) => v.kind === "number").map((v) => (v as { value: number }).value);
+      const nulls = cells.filter((v) => v.kind === "null").length;
+      const distinct = new Set(cells.filter((v) => v.kind !== "null").map((v) => keyOf(v))).size;
+      let min: MValue = NULL, max: MValue = NULL, avg: MValue = NULL, sd: MValue = NULL;
+      if (nums.length) {
+        const mean = nums.reduce((s, x) => s + x, 0) / nums.length;
+        min = number(Math.min(...nums)); max = number(Math.max(...nums)); avg = number(mean);
+        sd = number(Math.sqrt(nums.reduce((s, x) => s + (x - mean) ** 2, 0) / nums.length));
+      }
+      return [text(c), min, max, avg, sd, number(cells.length), number(nulls), number(distinct)];
+    });
+    return table(cols, rows);
   }));
 
   const firstN = (t: Table, cond: MValue): Table => {

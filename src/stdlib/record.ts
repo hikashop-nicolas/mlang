@@ -46,6 +46,19 @@ export function registerRecord(env: Env): void {
     }
     return { kind: "record", fields };
   }));
+  def("Record.ReorderFields", fn("Record.ReorderFields", [{ name: "record" }, { name: "fieldOrder" }, { name: "missingField", optional: true }], (a) => {
+    const r = rec(a[0]!, "Record.ReorderFields");
+    const order = namesOf(a[1]!, "field");
+    const missing = a[2] && a[2].kind === "number" ? a[2].value : 0; // MissingField.Error default
+    const fields = new Map<string, MValue>();
+    for (const f of order) {
+      const v = r.fields.get(f);
+      if (v === undefined) { if (missing === 0) err("Expression.Error", `The field '${f}' of the record wasn't found.`); continue; }
+      fields.set(f, v);
+    }
+    for (const [k, v] of r.fields) if (!fields.has(k)) fields.set(k, v); // trailing (un-listed) fields keep their order
+    return { kind: "record", fields };
+  }));
   def("Record.ToTable", fn("Record.ToTable", [{ name: "record" }], (a) => {
     const r = rec(a[0]!, "Record.ToTable");
     return { kind: "table", columns: ["Name", "Value"], rows: [...r.fields].map(([k, v]) => [text(k), v]) };
