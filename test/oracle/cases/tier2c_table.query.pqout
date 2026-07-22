@@ -1,0 +1,1 @@
+[ Dup = #table( type table [A = any, B = any, A2 = any] , {{1, 2, 1} } ) , Reorder = #table( type table [B = any, A = any] , {{2, 1} } ) , Recs = {[ A = 1 ] , [ A = 2 ] } , Inv = 7, RT = 42 ] 
