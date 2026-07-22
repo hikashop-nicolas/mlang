@@ -24,6 +24,11 @@ src/oracle.test.ts.
   common cultures; fr-FR U+00A0 group tolerated as a plain space. Confirmed.
 
 ## Open
+- Structured types are shallow: subtyping is name+nullability (no deep record/table/function
+  structural checks). TransformColumnTypes marks columns nullable (oracle), so Table.Columns
+  OfType matches only type any for transformed columns. type table [...] literals type their
+  columns as any (field-type expressions are not evaluated). Function param/return types and
+  DateTimeZone VALUES are not modelled (the datetimezone TYPE exists).
 - Async connectors resolve by REPLAY: the evaluator stays synchronous and re-runs the pure
   computation once per distinct connector source (N sources => N+1 passes). Correct because
   evaluation is pure and connector results are cached per refresh; the cost is recomputation,
