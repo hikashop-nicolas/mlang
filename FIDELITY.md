@@ -23,6 +23,14 @@ remaining behavioural divergences and the intentionally out-of-scope areas.
 - Bare `try` wraps success as `{HasError = false, Value = ...}` (spec; also fixed).
 - `try X catch (e) => h` runs the handler with the error record (nullary `catch ()` also works).
 - Lazy `let`: unused bindings never evaluate. Confirmed.
+- Culture-aware OUTPUT: `Date.ToText`/`DateTime.ToText`/`Number.ToText`/`Date.MonthName`/
+  `Date.DayOfWeekName` localize via Intl (fr-FR `d` -> `22/07/2026`, `Date.MonthName ja-JP` ->
+  `7月`, `Number.ToText N2 fr-FR` -> `1 234,50`). en-US/no-culture paths unchanged. (Intl uses a
+  narrow no-break space U+202F as the fr group separator where .NET uses U+00A0 - a benign
+  space variant.) Oracle case `culture` pending confirmation.
+- `value as type` enforces conformance and raises on mismatch (spec), not a pass-through.
+- Structural subtyping: `Value.Is`/`Type.Is` check record fields (open/closed, optional), table
+  columns and list items - not just the kind name.
 
 - Default ToText/Text.From = en-US General format (date M/d/yyyy, time h:mm tt short,
   datetime M/d/yyyy h:mm:ss tt). Custom + standard format strings implemented.
@@ -32,22 +40,12 @@ remaining behavioural divergences and the intentionally out-of-scope areas.
 
 ## Open (genuine remaining divergences)
 
-- **Culture-aware OUTPUT formatting is en-US only.** `Date.ToText`/`Number.ToText` with a
-  non-US culture still emit US format (e.g. `Date.ToText(#date(2026,7,22), "d", "fr-FR")` gives
-  "7/22/2026", not "22/07/2026"), and `Date.MonthName`/`Date.DayOfWeekName` return English names
-  for any culture. Culture-aware *input* parsing (`Number.From`/`Date.From` separators & D-M-Y
-  order) IS implemented; only the output/localized-name direction is missing. This is the most
-  user-visible gap for fr/ja workbooks.
-- **Numbers are IEEE doubles only** (no Decimal/Currency 28-digit precision, and Int64 values
-  above 2^53 lose precision, e.g. `9007199254740993` -> `...992`). Fine for typical
-  spreadsheet data; a distinct decimal/precision mode is not implemented.
-- **`as type` ascriptions are pass-throughs** (no runtime conformance check): `"x" as number`
-  returns "x" rather than raising. `Value.As`/`Value.Is`/`is` DO check; only the `as` operator
-  is lax.
-- **Structured types are shallow**: subtyping is name + nullability (no deep record/table
-  structural subtyping). Function parameter/return types, record field types, table keys, and
-  facets ARE now modelled (Type.* Tier 2); but TransformColumnTypes marks columns nullable, so
-  Table.ColumnsOfType matches only `type any` for transformed columns.
+- **Numbers are IEEE doubles** (matching Excel's own storage and M's `Double`, so e.g.
+  `0.1 + 0.2 = 0.30000000000000004` is correct, not a divergence). Exact integers beyond 2^53
+  (64-bit IDs) DO carry a BigInt shadow so equality, compare, sort, dedup, `Number.FromText`/
+  `Int64.From`, `+`/`-`/`*`, and text output stay exact. Remaining by design: `toJS` display and
+  stdlib aggregations (`List.Sum`, ...) fold back to double, and Decimal/Currency fractional
+  precision past a double isn't modelled (a full decimal tower is disproportionate here).
 - **Async connectors resolve by REPLAY**: the evaluator stays synchronous and re-runs the pure
   computation once per distinct connector source (N sources => N+1 passes). Correct because
   evaluation is pure and connector results are cached per refresh; the cost is recomputation,
