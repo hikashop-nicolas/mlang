@@ -1,7 +1,7 @@
 // Table.* functions, implemented from the public reference. Argument shapes not covered
 // yet raise precise "unsupported" errors rather than approximating.
 import type { Env } from "../interpret.js";
-import { MError, NULL, err, expect, list, logical, number, rowRecord, table, text, type MType, type MValue } from "../values.js";
+import { MError, NULL, err, errorValue, expect, list, logical, number, rowRecord, table, text, type MType, type MValue } from "../values.js";
 import { asTable, callFn, cmpWithNulls, colIndex, colNamesFromSpec, fn, keyOf, listOf, namesOf, pairList, subTable, textOf, truthy, type Table } from "./helpers.js";
 import { convertTo, textFrom } from "./convert.js";
 import { typeName } from "../types.js";
@@ -140,10 +140,19 @@ export function registerTable(env: Env): void {
     return table(columns, rows);
   }));
   // No per-cell error values in our model, so these validate and pass through / select none.
-  def("Table.RemoveRowsWithErrors", fn("Table.RemoveRowsWithErrors", [{ name: "table" }, { name: "columns", optional: true }], (a) => asTable(a[0]!, "Table.RemoveRowsWithErrors")));
+  // Error cells are error values (from AddColumn/TransformColumns/TransformColumnTypes).
+  const errCols = (t: Table, colArg: MValue | undefined): number[] =>
+    colArg && colArg.kind !== "null" ? namesOf(colArg, "column").map((c) => colIndex(t, c)) : t.columns.map((_, i) => i);
+  const rowHasError = (r: MValue[], cols: number[]): boolean => cols.some((i) => (r[i] ?? NULL).kind === "error");
+  def("Table.RemoveRowsWithErrors", fn("Table.RemoveRowsWithErrors", [{ name: "table" }, { name: "columns", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.RemoveRowsWithErrors");
+    const cols = errCols(t, a[1]);
+    return table(t.columns, t.rows.filter((r) => !rowHasError(r, cols)), t.types);
+  }));
   def("Table.SelectRowsWithErrors", fn("Table.SelectRowsWithErrors", [{ name: "table" }, { name: "columns", optional: true }], (a) => {
     const t = asTable(a[0]!, "Table.SelectRowsWithErrors");
-    return table(t.columns, [], t.types);
+    const cols = errCols(t, a[1]);
+    return table(t.columns, t.rows.filter((r) => rowHasError(r, cols)), t.types);
   }));
   def("Table.ColumnsOfType", fn("Table.ColumnsOfType", [{ name: "table" }, { name: "listOfTypes" }], (a) => {
     const t = asTable(a[0]!, "Table.ColumnsOfType");
@@ -165,12 +174,13 @@ export function registerTable(env: Env): void {
     });
     return table(cols, rows);
   }));
-  // We never produce per-cell error values (FIDELITY: AddColumn stores null), so there is
-  // nothing to replace - this validates the columns and returns the table unchanged.
+  // Replace error cells in the given columns with a value: {{column, replacement}, ...}.
   def("Table.ReplaceErrorValues", fn("Table.ReplaceErrorValues", [{ name: "table" }, { name: "errorReplacement" }], (a) => {
     const t = asTable(a[0]!, "Table.ReplaceErrorValues");
-    for (const [colV] of pairList(a[1]!, "Table.ReplaceErrorValues")) colIndex(t, textOf(colV!, "column"));
-    return t;
+    const repl = new Map<number, MValue>();
+    for (const [colV, valV] of pairList(a[1]!, "Table.ReplaceErrorValues")) repl.set(colIndex(t, textOf(colV!, "column")), valV!);
+    const rows = t.rows.map((r) => r.map((v, i) => (repl.has(i) && (v ?? NULL).kind === "error" ? repl.get(i)! : v)));
+    return table(t.columns, rows, t.types);
   }));
   def("Table.FromValue", fn("Table.FromValue", [{ name: "value" }, { name: "options", optional: true }], (a) => {
     const v = a[0]!;
@@ -292,7 +302,7 @@ export function registerTable(env: Env): void {
         v = callFn(a[2]!, [rowRecord(t, i)]);
       } catch (e) {
         if (!(e instanceof MError)) throw e;
-        v = NULL; // FIDELITY: Excel stores a per-cell error value
+        v = errorValue(e); // Excel stores a per-cell error value
       }
       return [...r, v];
     });

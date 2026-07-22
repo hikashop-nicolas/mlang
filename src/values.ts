@@ -16,6 +16,7 @@ export type MValue =
   | { kind: "list"; items: MValue[] }
   | { kind: "record"; fields: Map<string, MValue> } // insertion-ordered
   | { kind: "table"; columns: string[]; rows: MValue[][]; types?: Map<string, MType> }
+  | { kind: "error"; error: MError } // a contained error value (e.g. an errored table cell)
   | MFunction
   | MTypeValue;
 
@@ -71,6 +72,12 @@ export const datetime = (y: number, m: number, d: number, secs: number): MValue 
 export const duration = (secs: number): MValue => ({ kind: "duration", secs });
 export const datetimezone = (y: number, m: number, d: number, secs: number, offset: number): MValue => ({ kind: "datetimezone", y, m, d, secs, offset });
 export const binary = (bytes: Uint8Array): MValue => ({ kind: "binary", bytes });
+export const errorValue = (e: MError): MValue => ({ kind: "error", error: e });
+/** Re-raise a contained error value when it is consumed; pass anything else through. */
+export const raiseIfError = (v: MValue): MValue => {
+  if (v.kind === "error") throw v.error;
+  return v;
+};
 export const typeVal = (t: MType): MTypeValue => ({ kind: "type", ...t });
 export const primType = (name: string, extra: Partial<MType> = {}): MTypeValue => ({ kind: "type", name, ...extra });
 export const record = (entries: [string, MValue][]): MValue => ({ kind: "record", fields: new Map(entries) });
@@ -83,6 +90,7 @@ export function err(reason: string, message: string, detail?: MValue): never {
 export const typeName = (v: MValue): string => v.kind;
 
 export function expect<K extends MValue["kind"]>(v: MValue, kind: K, what: string): Extract<MValue, { kind: K }> {
+  if (v.kind === "error") throw v.error; // consuming an error value re-raises it
   if (v.kind !== kind) err("Expression.Error", `${what}: expected ${kind}, got ${v.kind}`);
   return v as Extract<MValue, { kind: K }>;
 }
@@ -140,6 +148,7 @@ export function equals(a: MValue, b: MValue): boolean {
       );
     }
     case "type": return a.name === (b as typeof a).name && !!a.nullable === !!(b as typeof a).nullable;
+    case "error": throw a.error; // comparing an error value re-raises it
     case "function": return a === b;
   }
 }
@@ -189,6 +198,7 @@ export function toJS(v: MValue): unknown {
     case "datetime": return `#datetime(${v.y},${v.m},${v.d},${v.secs})`;
     case "duration": return `#duration(${v.secs})`;
     case "datetimezone": return `#datetimezone(${v.y},${v.m},${v.d},${v.secs},${v.offset})`;
+    case "error": return { "#error": v.error.reason, message: v.error.message };
     case "binary": return `#binary(${btoa(String.fromCharCode(...v.bytes))})`;
     case "list": return v.items.map(toJS);
     case "record": return Object.fromEntries([...v.fields].map(([k, x]) => [k, toJS(x)]));

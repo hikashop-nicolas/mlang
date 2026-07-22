@@ -3,7 +3,7 @@
 // propagate until try...otherwise; null propagates through arithmetic; three-valued and/or.
 // The parser AST is consumed structurally (one place to adapt if its shape changes).
 
-import { MError, NULL, date, datetime, datetimezone, duration, err, equals, compare, logical, number, text, time, rowRecord, type MFunction, type MType, type MValue } from "./values.js";
+import { MError, NULL, date, datetime, datetimezone, duration, err, equals, compare, logical, number, raiseIfError, text, time, rowRecord, type MFunction, type MType, type MValue } from "./values.js";
 import { civilFromDays, daysFromCivil } from "./temporal.js";
 import { valueMatchesType } from "./types.js";
 
@@ -205,6 +205,7 @@ export function evalNode(n: Node, env: Env): MValue {
       const bareTry = !handler || handler.kind !== "OtherwiseExpression";
       try {
         const v = evalNode(child(n, "protectedExpression"), env);
+        if (v.kind === "error") throw v.error; // a contained error value is caught by try
         if (!bareTry) return v;
         // Bare try wraps success too: {HasError = false, Value = v} (spec).
         const fields = new Map<string, MValue>();
@@ -392,8 +393,8 @@ function fieldAccess(v: MValue, step: Node, env: Env): MValue {
 
 function arithmetic(n: Node, env: Env): MValue {
   const op = child(n, "operatorConstant").constantKind as string;
-  const l = evalNode(child(n, "left"), env);
-  const r = evalNode(child(n, "right"), env);
+  const l = raiseIfError(evalNode(child(n, "left"), env));
+  const r = raiseIfError(evalNode(child(n, "right"), env));
   if (l.kind === "null" || r.kind === "null") return NULL; // null propagates (spec)
   if (op === "&") {
     if (l.kind === "text" && r.kind === "text") return text(l.value + r.value);
