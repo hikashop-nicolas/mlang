@@ -1,7 +1,7 @@
 // BinaryFormat.*: a small binary-reader DSL. A "binary format" is a callable value that reads
 // a binary from offset 0 and returns the parsed value; the combinators compose these. Each
 // format also carries an internal reader (bytes, offset) -> { value, offset } (via a WeakMap)
-// so composites can chain while advancing position. Integer formats default to little-endian.
+// so composites can chain while advancing position. Integer formats default to BIG-endian.
 import type { Env } from "../interpret.js";
 import { binary, err, list, number, record, text, type MFunction, type MValue } from "../values.js";
 import { fn } from "./helpers.js";
@@ -51,7 +51,7 @@ function intFormat(name: string, size: number, signed: boolean): MFunction {
     intRebuild.set(f, build);
     return f;
   };
-  return build(true);
+  return build(false); // big-endian by default (oracle-confirmed)
 }
 
 export function registerBinaryFormat(env: Env): void {
