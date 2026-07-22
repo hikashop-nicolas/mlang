@@ -2,8 +2,8 @@
 // DateTime.* / Duration.* Tier-1 subset. Semantics from the public reference; the date
 // arithmetic edge cases are oracle-pinned.
 import type { Env } from "../interpret.js";
-import { NULL, date, datetime, duration, err, number, text, time, type MValue } from "../values.js";
-import { END_OF_DAY_SECS, addMonths, civilFromDays, dateTimeToSerial, dayOfWeekSunday0, daysFromCivil, daysInMonth, parseDateTimeText, parseDateText, serialToDateTime, usDate, usDateTime, usTimeShort } from "../temporal.js";
+import { NULL, date, datetime, datetimezone, duration, err, number, text, time, type MValue } from "../values.js";
+import { END_OF_DAY_SECS, addMonths, civilFromDays, dateTimeToSerial, dayOfWeekSunday0, daysFromCivil, daysInMonth, parseDateTimeText, parseDateTimeZoneText, parseDateText, serialToDateTime, usDate, usDateTime, usTimeShort } from "../temporal.js";
 import { cultureOf, parseDateCulture } from "../culture.js";
 import { fn, numOf } from "./helpers.js";
 import { formatCustom, standardDateTimePattern } from "../format.js";
@@ -36,7 +36,7 @@ const nn = (name: string, params: { name: string; optional?: boolean }[], f: (ar
 
 const asDateish = (v: MValue, who: string): { y: number; m: number; d: number; secs: number } => {
   if (v.kind === "date") return { y: v.y, m: v.m, d: v.d, secs: 0 };
-  if (v.kind === "datetime") return { y: v.y, m: v.m, d: v.d, secs: v.secs };
+  if (v.kind === "datetime" || v.kind === "datetimezone") return { y: v.y, m: v.m, d: v.d, secs: v.secs };
   err("Expression.Error", `${who}: expected a date or datetime, got ${v.kind}.`);
 };
 
@@ -239,6 +239,46 @@ export function registerDateTime(env: Env): void {
   def("DateTime.LocalNow", fn("DateTime.LocalNow", [], () => err("Expression.Error", "mlang: DateTime.LocalNow is not supported (deterministic engine).")));
   def("DateTime.FixedLocalNow", fn("DateTime.FixedLocalNow", [], () => err("Expression.Error", "mlang: DateTime.FixedLocalNow is not supported (deterministic engine).")));
 
+  // --- DateTimeZone.* ----------------------------------------------------------------
+  def("#datetimezone", fn("#datetimezone", [{ name: "year" }, { name: "month" }, { name: "day" }, { name: "hour" }, { name: "minute" }, { name: "second" }, { name: "offsetHours" }, { name: "offsetMinutes" }], (a) => {
+    const y = numOf(a[0]!, "year");
+    const m = numOf(a[1]!, "month");
+    const d = numOf(a[2]!, "day");
+    if (m < 1 || m > 12 || d < 1 || d > daysInMonth(y, m)) err("Expression.Error", "#datetimezone: arguments out of range.");
+    const oh = numOf(a[6]!, "offsetHours");
+    const offset = oh * 60 + (oh < 0 ? -Math.abs(numOf(a[7]!, "offsetMinutes")) : numOf(a[7]!, "offsetMinutes"));
+    return datetimezone(y, m, d, numOf(a[3]!, "hour") * 3600 + numOf(a[4]!, "minute") * 60 + numOf(a[5]!, "second"), offset);
+  }));
+  def("DateTimeZone.From", nn("DateTimeZone.From", [{ name: "value" }, { name: "culture", optional: true }], (a) => {
+    const v = a[0]!;
+    if (v.kind === "datetimezone") return v;
+    if (v.kind === "datetime") return datetimezone(v.y, v.m, v.d, v.secs, 0);
+    if (v.kind === "date") return datetimezone(v.y, v.m, v.d, 0, 0);
+    if (v.kind === "number") { const s = serialToDateTime(v.value); return datetimezone(s.y, s.m, s.d, s.secs, 0); }
+    if (v.kind === "text") {
+      const p = parseDateTimeZoneText(v.value);
+      if (!p) err("Expression.Error", `DateTimeZone.From: cannot convert "${v.value}".`);
+      return datetimezone(p.y, p.m, p.d, p.secs, p.offset);
+    }
+    err("Expression.Error", `DateTimeZone.From: cannot convert ${v.kind}.`);
+  }));
+  const asDtz = (v: MValue, who: string): Extract<MValue, { kind: "datetimezone" }> => {
+    if (v.kind !== "datetimezone") err("Expression.Error", `${who}: expected a datetimezone.`);
+    return v;
+  };
+  def("DateTimeZone.ZoneHours", nn("DateTimeZone.ZoneHours", [{ name: "dateTimeZone" }], (a) => number(Math.trunc(asDtz(a[0]!, "DateTimeZone.ZoneHours").offset / 60))));
+  def("DateTimeZone.ZoneMinutes", nn("DateTimeZone.ZoneMinutes", [{ name: "dateTimeZone" }], (a) => number(asDtz(a[0]!, "DateTimeZone.ZoneMinutes").offset % 60)));
+  def("DateTimeZone.RemoveZone", nn("DateTimeZone.RemoveZone", [{ name: "dateTimeZone" }], (a) => { const v = asDtz(a[0]!, "DateTimeZone.RemoveZone"); return datetime(v.y, v.m, v.d, v.secs); }));
+  def("DateTimeZone.ToUtc", nn("DateTimeZone.ToUtc", [{ name: "dateTimeZone" }], (a) => shiftZone(asDtz(a[0]!, "DateTimeZone.ToUtc"), 0)));
+  def("DateTimeZone.SwitchZone", nn("DateTimeZone.SwitchZone", [{ name: "dateTimeZone" }, { name: "timezoneHours" }, { name: "timezoneMinutes", optional: true }], (a) => {
+    const v = asDtz(a[0]!, "DateTimeZone.SwitchZone");
+    const th = numOf(a[1]!, "timezoneHours");
+    const target = th * 60 + (a[2] && a[2].kind === "number" ? (th < 0 ? -Math.abs(a[2].value) : a[2].value) : 0);
+    return shiftZone(v, target);
+  }));
+  def("DateTimeZone.ToLocal", nn("DateTimeZone.ToLocal", [{ name: "dateTimeZone" }], () => err("Expression.Error", "mlang: DateTimeZone.ToLocal needs a local zone (deterministic engine).")));
+  for (const now of ["DateTimeZone.UtcNow", "DateTimeZone.LocalNow", "DateTimeZone.FixedUtcNow", "DateTimeZone.FixedLocalNow"]) def(now, fn(now, [], () => err("Expression.Error", `mlang: ${now} is not supported (deterministic engine).`)));
+
   // --- Duration.* --------------------------------------------------------------------
   def("Duration.From", nn("Duration.From", [{ name: "value" }], (a) => {
     const v = a[0]!;
@@ -269,6 +309,15 @@ export function registerDateTime(env: Env): void {
 }
 
 /** Shift a date/datetime by days/months/years, preserving the input kind. */
+/** Same UTC instant, expressed in a new zone offset (minutes). */
+function shiftZone(v: Extract<MValue, { kind: "datetimezone" }>, targetOffset: number): MValue {
+  const instant = daysFromCivil(v.y, v.m, v.d) * 86400 + v.secs - v.offset * 60;
+  const local = instant + targetOffset * 60;
+  const days = Math.floor(local / 86400);
+  const c = civilFromDays(days);
+  return datetimezone(c.y, c.m, c.d, local - days * 86400, targetOffset);
+}
+
 function shift(v: MValue, days: number, months: number, years: number): MValue {
   const src = v.kind === "date" || v.kind === "datetime" ? v : err("Expression.Error", "Expected a date or datetime.");
   let { y, m, d } = src as DateV | DateTimeV;

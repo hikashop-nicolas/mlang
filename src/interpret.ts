@@ -3,7 +3,7 @@
 // propagate until try...otherwise; null propagates through arithmetic; three-valued and/or.
 // The parser AST is consumed structurally (one place to adapt if its shape changes).
 
-import { MError, NULL, date, datetime, duration, err, equals, compare, logical, number, text, time, rowRecord, type MFunction, type MType, type MValue } from "./values.js";
+import { MError, NULL, date, datetime, datetimezone, duration, err, equals, compare, logical, number, text, time, rowRecord, type MFunction, type MType, type MValue } from "./values.js";
 import { civilFromDays, daysFromCivil } from "./temporal.js";
 import { valueMatchesType } from "./types.js";
 
@@ -427,9 +427,18 @@ function temporalArithmetic(op: string, l: MValue, r: MValue): MValue | null {
     const c = civilFromDays(days);
     return asDate ? date(c.y, c.m, c.d) : datetime(c.y, c.m, c.d, secs);
   };
+  const dtzShift = (v: Extract<MValue, { kind: "datetimezone" }>, deltaSecs: number): MValue => {
+    const total = daysFromCivil(v.y, v.m, v.d) * 86400 + v.secs + deltaSecs;
+    const days = Math.floor(total / 86400);
+    const c = civilFromDays(days);
+    return datetimezone(c.y, c.m, c.d, total - days * 86400, v.offset);
+  };
+  const dtzInstant = (v: Extract<MValue, { kind: "datetimezone" }>): number => daysFromCivil(v.y, v.m, v.d) * 86400 + v.secs - v.offset * 60;
   if (op === "+") {
     if ((l.kind === "date" || l.kind === "datetime") && r.kind === "duration") return fromSecs(dtSecs(l) + r.secs, l.kind === "date");
     if (l.kind === "duration" && (r.kind === "date" || r.kind === "datetime")) return fromSecs(dtSecs(r) + l.secs, r.kind === "date");
+    if (l.kind === "datetimezone" && r.kind === "duration") return dtzShift(l, r.secs);
+    if (l.kind === "duration" && r.kind === "datetimezone") return dtzShift(r, l.secs);
     if (l.kind === "time" && r.kind === "duration") return time(((l.secs + r.secs) % 86400 + 86400) % 86400);
     if (l.kind === "duration" && r.kind === "time") return time(((r.secs + l.secs) % 86400 + 86400) % 86400);
     if (l.kind === "duration" && r.kind === "duration") return duration(l.secs + r.secs);
@@ -438,6 +447,8 @@ function temporalArithmetic(op: string, l: MValue, r: MValue): MValue | null {
   if (op === "-") {
     if ((l.kind === "date" || l.kind === "datetime") && (r.kind === "date" || r.kind === "datetime") && l.kind === r.kind)
       return duration(dtSecs(l) - dtSecs(r));
+    if (l.kind === "datetimezone" && r.kind === "datetimezone") return duration(dtzInstant(l) - dtzInstant(r));
+    if (l.kind === "datetimezone" && r.kind === "duration") return dtzShift(l, -r.secs);
     if ((l.kind === "date" || l.kind === "datetime") && r.kind === "duration") return fromSecs(dtSecs(l) - r.secs, l.kind === "date");
     if (l.kind === "time" && r.kind === "time") return duration(l.secs - r.secs);
     if (l.kind === "time" && r.kind === "duration") return time(((l.secs - r.secs) % 86400 + 86400) % 86400);

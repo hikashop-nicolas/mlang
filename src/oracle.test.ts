@@ -42,7 +42,11 @@ function parseValue(p: P): unknown {
   if (c === "{") return parseList(p);
   if (lit(p, "#table")) return parseTable(p);
   // Longest-prefix first: #datetimezone before #datetime before #date.
-  if (lit(p, "#datetimezone")) throw new Error("pqout: datetimezone not supported yet");
+  if (lit(p, "#datetimezone")) {
+    const [y, mo, d, h, mi, s, oh, om] = parseNumArgs(p, 8);
+    const offset = oh! * 60 + (oh! < 0 ? -Math.abs(om!) : om!);
+    return `#datetimezone(${y},${mo},${d},${h! * 3600 + mi! * 60 + s!},${offset})`;
+  }
   if (lit(p, "#datetime")) {
     const [y, mo, d, h, mi, s] = parseNumArgs(p, 6);
     return `#datetime(${y},${mo},${d},${h! * 3600 + mi! * 60 + s!})`;
@@ -214,6 +218,7 @@ function mvalueToPlain(v: MValue): unknown {
     case "date": return `#date(${v.y},${v.m},${v.d})`;
     case "time": return `#time(${v.secs})`;
     case "datetime": return `#datetime(${v.y},${v.m},${v.d},${v.secs})`;
+    case "datetimezone": return `#datetimezone(${v.y},${v.m},${v.d},${v.secs},${v.offset})`;
     case "duration": return `#duration(${v.secs})`;
     case "list": return v.items.map(mvalueToPlain);
     case "record": return Object.fromEntries([...v.fields].map(([k, x]) => [k, mvalueToPlain(x)]));

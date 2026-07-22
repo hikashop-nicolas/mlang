@@ -11,6 +11,7 @@ export type MValue =
   | { kind: "time"; secs: number } // seconds since midnight (fractional)
   | { kind: "datetime"; y: number; m: number; d: number; secs: number }
   | { kind: "duration"; secs: number } // fractional seconds, may be negative
+  | { kind: "datetimezone"; y: number; m: number; d: number; secs: number; offset: number } // offset in minutes
   | { kind: "binary"; bytes: Uint8Array }
   | { kind: "list"; items: MValue[] }
   | { kind: "record"; fields: Map<string, MValue> } // insertion-ordered
@@ -68,6 +69,7 @@ export const date = (y: number, m: number, d: number): MValue => ({ kind: "date"
 export const time = (secs: number): MValue => ({ kind: "time", secs });
 export const datetime = (y: number, m: number, d: number, secs: number): MValue => ({ kind: "datetime", y, m, d, secs });
 export const duration = (secs: number): MValue => ({ kind: "duration", secs });
+export const datetimezone = (y: number, m: number, d: number, secs: number, offset: number): MValue => ({ kind: "datetimezone", y, m, d, secs, offset });
 export const binary = (bytes: Uint8Array): MValue => ({ kind: "binary", bytes });
 export const typeVal = (t: MType): MTypeValue => ({ kind: "type", ...t });
 export const primType = (name: string, extra: Partial<MType> = {}): MTypeValue => ({ kind: "type", name, ...extra });
@@ -110,6 +112,7 @@ export function equals(a: MValue, b: MValue): boolean {
     }
     case "time": return a.secs === (b as typeof a).secs;
     case "duration": return a.secs === (b as typeof a).secs;
+    case "datetimezone": return dtzInstant(a) === dtzInstant(b as typeof a);
     case "binary": {
       const bb = (b as typeof a).bytes;
       return a.bytes.length === bb.length && a.bytes.every((x, i) => x === bb[i]);
@@ -155,7 +158,22 @@ export function compare(a: MValue, b: MValue): number {
     return a.y - bd.y || a.m - bd.m || a.d - bd.d || as - bs;
   }
   if (a.kind === "time" || a.kind === "duration") return a.secs - (b as typeof a).secs;
+  if (a.kind === "datetimezone") return dtzInstant(a) - dtzInstant(b as typeof a);
   err("Expression.Error", `Cannot compare ${a.kind} values`);
+}
+
+/** UTC instant (seconds since 1970-01-01T00:00Z) of a datetimezone, for equality/compare. */
+export function dtzInstant(v: Extract<MValue, { kind: "datetimezone" }>): number {
+  return daysFromCivil1970(v.y, v.m, v.d) * 86400 + v.secs - v.offset * 60;
+}
+// Local copy of the civil-days algorithm (temporal.ts imports values, so avoid a cycle).
+function daysFromCivil1970(y: number, m: number, d: number): number {
+  y -= m <= 2 ? 1 : 0;
+  const era = Math.floor(y / 400);
+  const yoe = y - era * 400;
+  const doy = Math.trunc((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1;
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+  return era * 146097 + doe - 719468;
 }
 
 /** Plain-JS projection for tests, demos and hosts. Temporal values project to tagged
@@ -170,6 +188,7 @@ export function toJS(v: MValue): unknown {
     case "time": return `#time(${v.secs})`;
     case "datetime": return `#datetime(${v.y},${v.m},${v.d},${v.secs})`;
     case "duration": return `#duration(${v.secs})`;
+    case "datetimezone": return `#datetimezone(${v.y},${v.m},${v.d},${v.secs},${v.offset})`;
     case "binary": return `#binary(${btoa(String.fromCharCode(...v.bytes))})`;
     case "list": return v.items.map(toJS);
     case "record": return Object.fromEntries([...v.fields].map(([k, x]) => [k, toJS(x)]));

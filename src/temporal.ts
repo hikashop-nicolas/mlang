@@ -94,6 +94,29 @@ export const usTimeLong = (secs: number): string => {
 };
 export const usDateTime = (y: number, m: number, d: number, secs: number): string => `${usDate(y, m, d)} ${usTimeLong(secs)}`;
 
+/** Format a timezone offset (minutes) as "+HH:mm" / "-HH:mm". */
+export function formatOffset(mins: number): string {
+  const sign = mins < 0 ? "-" : "+";
+  const a = Math.abs(mins);
+  return `${sign}${p2(Math.floor(a / 60))}:${p2(a % 60)}`;
+}
+
+/** Parse a datetimezone: a datetime followed by Z or +HH:mm / -HH:mm. */
+export function parseDateTimeZoneText(s: string): { y: number; m: number; d: number; secs: number; offset: number } | null {
+  const m = /^(.*?)(Z|[+-]\d{2}:?\d{2})$/.exec(s.trim());
+  if (!m) {
+    const dt = parseDateTimeText(s);
+    return dt ? { ...dt, offset: 0 } : null;
+  }
+  const dt = parseDateTimeText(m[1]!.trim());
+  if (!dt) return null;
+  const z = m[2]!;
+  if (z === "Z") return { ...dt, offset: 0 };
+  const sign = z[0] === "-" ? -1 : 1;
+  const digits = z.slice(1).replace(":", "");
+  return { ...dt, offset: sign * (Number(digits.slice(0, 2)) * 60 + Number(digits.slice(2))) };
+}
+
 /** Parse "YYYY-MM-DD" (ISO) or "M/D/YYYY" (en-US default culture). Null if unparsable. */
 export function parseDateText(s: string): { y: number; m: number; d: number } | null {
   let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);

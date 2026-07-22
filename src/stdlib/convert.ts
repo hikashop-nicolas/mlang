@@ -1,6 +1,6 @@
 // Value conversions shared by Text.From / Number.From / Table.TransformColumnTypes.
 import { NULL, date, datetime, err, logical, number, text, time, type MValue } from "../values.js";
-import { dateTimeToSerial, parseDateTimeText, parseDateText, serialToDateTime, usDate, usDateTime, usTimeShort } from "../temporal.js";
+import { dateTimeToSerial, formatOffset, parseDateTimeText, parseDateText, serialToDateTime, usDate, usDateTime, usTimeShort } from "../temporal.js";
 import { cultureOf, parseNumberCulture, type Culture } from "../culture.js";
 
 export const numToText = (n: number): string => {
@@ -18,6 +18,7 @@ export function textFrom(v: MValue): string {
     case "date": return usDate(v.y, v.m, v.d);
     case "time": return usTimeShort(v.secs);
     case "datetime": return usDateTime(v.y, v.m, v.d, v.secs);
+    case "datetimezone": return `${usDateTime(v.y, v.m, v.d, v.secs)} ${formatOffset(v.offset)}`;
     default:
       err("Expression.Error", `Cannot convert a ${v.kind} to text.`);
   }
@@ -28,7 +29,7 @@ export function numberFrom(v: MValue, culture?: Culture): MValue {
   if (v.kind === "number") return v;
   if (v.kind === "logical") return number(v.value ? 1 : 0);
   if (v.kind === "date") return number(dateTimeToSerial(v.y, v.m, v.d, 0));
-  if (v.kind === "datetime") return number(dateTimeToSerial(v.y, v.m, v.d, v.secs));
+  if (v.kind === "datetime" || v.kind === "datetimezone") return number(dateTimeToSerial(v.y, v.m, v.d, v.secs));
   if (v.kind === "time") return number(v.secs / 86400);
   if (v.kind === "duration") return number(v.secs / 86400); // total days
   if (v.kind === "text") {
