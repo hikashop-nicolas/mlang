@@ -23,5 +23,12 @@ in
         KeyPrimary = Type.TableKeys(Type.AddTableKey(TT, {"A"}, true)){0}[Primary],
         UnionSame = Type.Is(Type.Union({type number, type number}), type number),
         FacetNames = Record.FieldNames(Type.Facets(type number)),
-        FacetsAllNull = List.MatchesAll(Record.FieldValues(Type.Facets(type number)), each _ = null)
+        FacetsAllNull = List.MatchesAll(Record.FieldValues(Type.Facets(type number)), each _ = null),
+        IsRecordOk = Value.Is([A = 1], type [A = number]),
+        IsRecordWrongType = Value.Is([A = "x"], type [A = number]),
+        IsRecordExtraClosed = Value.Is([A = 1, B = 2], type [A = number]),
+        IsRecordOpen = Value.Is([A = 1, B = 2], type [A = number, ...]),
+        IsRecordOptional = Value.Is([A = 1], type [A = number, optional B = text]),
+        TypeIsOpenSuper = Type.Is(type [A = number, B = text], type [A = number, ...]),
+        TypeIsMissingReq = Type.Is(type [A = number], type [A = number, B = text])
     ]

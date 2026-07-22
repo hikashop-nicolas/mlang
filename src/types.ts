@@ -29,12 +29,31 @@ export function mtypeOfValue(v: MValue): MType {
   }
 }
 
-/** Does a value inhabit a type? (`is` operator, Value.Is.) */
+/** Does a value inhabit a type? (`is` operator, Value.Is.) Structured record/table/list types
+    are checked structurally; a compound type with no field/column/item detail matches by kind. */
 export function valueMatchesType(v: MValue, t: MType): boolean {
   if (t.union) return t.union.some((m) => valueMatchesType(v, m));
   if (t.name === "any") return true;
   if (v.kind === "null") return !!t.nullable || t.name === "null" || t.name === "none";
   if (t.name === "anynonnull") return true;
+  if (t.name === "record" && t.fields) {
+    if (v.kind !== "record") return false;
+    for (const f of t.fields) {
+      const fv = v.fields.get(f.name);
+      if (fv === undefined) { if (!f.optional) return false; continue; }
+      if (!valueMatchesType(fv, f.type)) return false;
+    }
+    if (!t.open) for (const k of v.fields.keys()) if (!t.fields.some((f) => f.name === k)) return false; // closed: no extra fields
+    return true;
+  }
+  if (t.name === "table" && t.columns) {
+    if (v.kind !== "table") return false;
+    return t.columns.every((c) => v.columns.includes(c.name));
+  }
+  if (t.name === "list" && t.item && t.item.name !== "any") {
+    if (v.kind !== "list") return false;
+    return v.items.every((it) => valueMatchesType(it, t.item!));
+  }
   return v.kind === t.name;
 }
 
@@ -47,6 +66,24 @@ export function subtypeOf(a: MType, b: MType): boolean {
   if (a.name === "none") return true;
   if (a.name !== b.name) return false;
   if (a.nullable && !b.nullable) return false;
+  // Structural: a <: b when a supplies every required field/column of b (compatibly) and, for a
+  // closed b, adds nothing extra. Detail-free compound types stay compatible by kind.
+  if (b.name === "record" && b.fields && a.fields) {
+    for (const bf of b.fields) {
+      const af = a.fields.find((f) => f.name === bf.name);
+      if (!af) { if (!bf.optional) return false; continue; }
+      if (!subtypeOf(af.type, bf.type)) return false;
+    }
+    if (!b.open && (a.open || a.fields.some((af) => !b.fields!.some((bf) => bf.name === af.name)))) return false;
+    return true;
+  }
+  if (b.name === "table" && b.columns && a.columns) {
+    return b.columns.every((bc) => { const ac = a.columns!.find((c) => c.name === bc.name); return !!ac && subtypeOf(ac.type, bc.type); });
+  }
+  if (b.name === "list" && b.item && a.item) return subtypeOf(a.item, b.item);
+  if (b.name === "function" && b.parameters && a.parameters) {
+    return a.parameters.length === b.parameters.length && (!b.returnType || !a.returnType || subtypeOf(a.returnType, b.returnType));
+  }
   return true;
 }
 

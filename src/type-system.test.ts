@@ -5,6 +5,28 @@ import { evaluate, toJS } from "./index.js";
 // parameters/return, typed record fields, open/closed records, table keys, and facets.
 const js = async (m: string): Promise<unknown> => toJS(await evaluate(m));
 
+describe("type system: structural subtyping", () => {
+  it("Value.Is checks record field structure", async () => {
+    expect(await js(`Value.Is([A = 1], type [A = number])`)).toBe(true);
+    expect(await js(`Value.Is([A = "x"], type [A = number])`)).toBe(false); // wrong field type
+    expect(await js(`Value.Is([A = 1, B = 2], type [A = number])`)).toBe(false); // extra field, closed
+    expect(await js(`Value.Is([A = 1, B = 2], type [A = number, ...])`)).toBe(true); // open record
+    expect(await js(`Value.Is([A = 1], type [A = number, optional B = text])`)).toBe(true); // optional absent
+    expect(await js(`Value.Is([A = 1], type record)`)).toBe(true); // detail-free -> kind match
+    expect(await js(`Value.Is(1, type [A = number])`)).toBe(false);
+  });
+  it("Value.Is checks table columns", async () => {
+    expect(await js(`Value.Is(#table({"A", "B"}, {{1, 2}}), type table [A = number])`)).toBe(true);
+    expect(await js(`Value.Is(#table({"A"}, {{1}}), type table [Z = number])`)).toBe(false);
+  });
+  it("Type.Is is structural for records and tables", async () => {
+    expect(await js(`Type.Is(type [A = number, B = text], type [A = number, ...])`)).toBe(true);
+    expect(await js(`Type.Is(type [A = number], type [A = number, B = text])`)).toBe(false); // missing required
+    expect(await js(`Type.Is(type [A = number, B = text], type [A = number])`)).toBe(false); // extra vs closed
+    expect(await js(`Type.Is(type table [A = number, B = text], type table [A = number])`)).toBe(true);
+  });
+});
+
 describe("type system: `as` ascription is enforced", () => {
   it("returns the value when it conforms", async () => {
     expect(await js(`1 as number`)).toBe(1);
