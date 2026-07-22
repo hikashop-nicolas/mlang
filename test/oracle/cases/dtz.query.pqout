@@ -1,0 +1,1 @@
+[ ZH = -8, ZM = 30, RZ = #datetime(2020, 1, 2, 3, 4, 5), UTC = #datetimezone(2020, 1, 2, 11, 0, 0, 0, 0), SW = #datetimezone(2020, 1, 2, 5, 0, 0, 2, 0), Sub = #duration(0, -1, 0, 0), Eq = true, Gt = true, Yr = 2020, Txt = "3/7/2021 1:05:09 PM -08:00", Num = 44196.791666666664, From = #datetimezone(2020, 1, 2, 3, 4, 5, -8, 0) ] 

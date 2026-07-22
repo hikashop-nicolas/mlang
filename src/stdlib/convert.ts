@@ -29,7 +29,8 @@ export function numberFrom(v: MValue, culture?: Culture): MValue {
   if (v.kind === "number") return v;
   if (v.kind === "logical") return number(v.value ? 1 : 0);
   if (v.kind === "date") return number(dateTimeToSerial(v.y, v.m, v.d, 0));
-  if (v.kind === "datetime" || v.kind === "datetimezone") return number(dateTimeToSerial(v.y, v.m, v.d, v.secs));
+  if (v.kind === "datetime") return number(dateTimeToSerial(v.y, v.m, v.d, v.secs));
+  if (v.kind === "datetimezone") return number(dateTimeToSerial(v.y, v.m, v.d, v.secs) - v.offset / 1440); // UTC instant serial (oracle)
   if (v.kind === "time") return number(v.secs / 86400);
   if (v.kind === "duration") return number(v.secs / 86400); // total days
   if (v.kind === "text") {
