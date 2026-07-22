@@ -51,7 +51,7 @@ export function registerConstants(env: Env): void {
   // Ascribed type values (the `X.Type` names Excel emits in TransformColumnTypes). The .name
   // routes conversion in convert.ts; the numeric family all coerces to a number.
   // Ascribed numeric types share the "number" primitive but keep their surface name.
-  for (const n of ["Int64.Type", "Number.Type", "Decimal.Type", "Currency.Type", "Percentage.Type"]) def(n, primType("number", { ascription: n }));
+  for (const n of ["Int64.Type", "Number.Type", "Decimal.Type", "Currency.Type", "Percentage.Type", "Int8.Type", "Int16.Type", "Int32.Type", "Byte.Type", "Single.Type", "Double.Type"]) def(n, primType("number", { ascription: n }));
   def("Text.Type", primType("text", { ascription: "Text.Type" }));
   def("Logical.Type", primType("logical", { ascription: "Logical.Type" }));
   def("Date.Type", primType("date", { ascription: "Date.Type" }));

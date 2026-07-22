@@ -1,7 +1,7 @@
 // Table.* functions, implemented from the public reference. Argument shapes not covered
 // yet raise precise "unsupported" errors rather than approximating.
 import type { Env } from "../interpret.js";
-import { MError, NULL, err, errorValue, expect, list, logical, number, rowRecord, table, text, type MType, type MValue } from "../values.js";
+import { MError, NULL, equals as equalsCell, err, errorValue, expect, list, logical, number, rowRecord, table, text, type MType, type MValue } from "../values.js";
 import { asTable, callFn, cmpWithNulls, colIndex, colNamesFromSpec, fn, keyOf, listOf, namesOf, pairList, subTable, textOf, truthy, type Table } from "./helpers.js";
 import { convertTo, textFrom } from "./convert.js";
 import { typeName } from "../types.js";
@@ -380,6 +380,40 @@ export function registerTable(env: Env): void {
       return true;
     }));
   }));
+
+  def("Table.IsDistinct", fn("Table.IsDistinct", [{ name: "table" }, { name: "comparisonCriteria", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.IsDistinct");
+    const cols = a[1] ? namesOf(a[1], "Table.IsDistinct column").map((c) => colIndex(t, c)) : t.columns.map((_, i) => i);
+    const seen = new Set<string>();
+    for (let i = 0; i < t.rows.length; i++) { const k = rowKey(t, i, cols); if (seen.has(k)) return logical(false); seen.add(k); }
+    return logical(true);
+  }));
+  def("Table.RemoveFirstN", fn("Table.RemoveFirstN", [{ name: "table" }, { name: "countOrCondition", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.RemoveFirstN");
+    const cond = a[1] ?? number(1);
+    if (cond.kind === "number") return subTable(t, t.rows.map((_, i) => i).slice(cond.value));
+    let i = 0; while (i < t.rows.length && truthy(callFn(cond, [rowRecord(t, i)]))) i++;
+    return subTable(t, t.rows.map((_, j) => j).slice(i));
+  }));
+  def("Table.RemoveLastN", fn("Table.RemoveLastN", [{ name: "table" }, { name: "countOrCondition", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.RemoveLastN");
+    const n = a[1]?.kind === "number" ? a[1].value : 1;
+    return subTable(t, t.rows.map((_, i) => i).slice(0, Math.max(0, t.rows.length - n)));
+  }));
+  def("Table.RemoveMatchingRows", fn("Table.RemoveMatchingRows", [{ name: "table" }, { name: "rows" }, { name: "equationCriteria", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.RemoveMatchingRows");
+    const remove = listOf(a[1]!, "Table.RemoveMatchingRows rows");
+    const matches = (i: number): boolean => remove.some((rv) => rv.kind === "record" && t.columns.every((c) => { const cell = t.rows[i]![t.columns.indexOf(c)] ?? NULL; const rf = rv.fields.get(c); return rf === undefined || equalsCell(cell, rf); }));
+    return subTable(t, rowsWhere(t, (i) => !matches(i)));
+  }));
+  // Table.SingleRow: the one row as a record; errors unless exactly one row.
+  def("Table.SingleRow", fn("Table.SingleRow", [{ name: "table" }], (a) => {
+    const t = asTable(a[0]!, "Table.SingleRow");
+    if (t.rows.length !== 1) err("Expression.Error", "Table.SingleRow: the table must have exactly one row.");
+    return rowRecord(t, 0);
+  }));
+  // Table.AddKey: keys are metadata Excel uses for relationships; passthrough here.
+  def("Table.AddKey", fn("Table.AddKey", [{ name: "table" }, { name: "columns" }, { name: "isPrimary" }], (a) => a[0]!));
 
   def("Table.Combine", fn("Table.Combine", [{ name: "tables" }, { name: "columns", optional: true }], (a) => {
     const parts = listOf(a[0]!, "Table.Combine").map((v) => asTable(v, "Table.Combine"));

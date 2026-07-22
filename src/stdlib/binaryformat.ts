@@ -3,7 +3,7 @@
 // format also carries an internal reader (bytes, offset) -> { value, offset } (via a WeakMap)
 // so composites can chain while advancing position. Integer formats default to BIG-endian.
 import type { Env } from "../interpret.js";
-import { binary, err, list, number, record, text, type MFunction, type MValue } from "../values.js";
+import { NULL, binary, err, list, number, record, text, type MFunction, type MValue } from "../values.js";
 import { fn } from "./helpers.js";
 import { toBytes } from "./binary.js";
 
@@ -56,6 +56,9 @@ function intFormat(name: string, size: number, signed: boolean): MFunction {
 
 export function registerBinaryFormat(env: Env): void {
   const def = (name: string, v: MValue): void => env.defineValue(name, v);
+
+  // BinaryFormat.Null: consumes no bytes and yields null (used as a placeholder branch).
+  def("BinaryFormat.Null", format("BinaryFormat.Null", (_bytes, offset) => ({ value: NULL, offset })));
 
   // Fixed-size integer formats (value formats, little-endian by default).
   def("BinaryFormat.Byte", intFormat("BinaryFormat.Byte", 1, false));

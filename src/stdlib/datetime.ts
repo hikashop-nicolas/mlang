@@ -92,6 +92,29 @@ export function registerDateTime(env: Env): void {
     }
     err("Expression.Error", `Date.From: cannot convert ${v.kind}.`);
   }));
+  // Date.FromText / Time.FromText: text-only parsers (Date/Time.From accept other kinds too).
+  def("Date.FromText", nn("Date.FromText", [{ name: "text" }, { name: "options", optional: true }], (a) => {
+    const v = a[0]!;
+    if (v.kind !== "text") err("Expression.Error", "Date.FromText: expected text.");
+    const s = v.value.trim();
+    const cultureName = a[1]?.kind === "text" ? a[1].value : a[1]?.kind === "record" ? (a[1].fields.get("Culture")?.kind === "text" ? (a[1].fields.get("Culture") as { value: string }).value : null) : null;
+    const p = parseDateCulture(s, cultureOf(cultureName)) ?? parseDateText(s) ?? (parseDateTimeText(s) as { y: number; m: number; d: number } | null);
+    if (!p) err("Expression.Error", `Date.FromText: cannot convert "${s}" to a date.`);
+    return date(p.y, p.m, p.d);
+  }));
+  def("Time.FromText", nn("Time.FromText", [{ name: "text" }, { name: "options", optional: true }], (a) => {
+    const v = a[0]!;
+    if (v.kind !== "text") err("Expression.Error", "Time.FromText: expected text.");
+    const m = v.value.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}(?:\.\d+)?))?\s*(AM|PM)?$/i);
+    if (!m) err("Expression.Error", `Time.FromText: cannot convert "${v.value}".`);
+    let h = Number(m[1]); const min = Number(m[2]); const sec = m[3] ? Number(m[3]) : 0;
+    if (m[4]) { const pm = m[4].toUpperCase() === "PM"; if (h === 12) h = pm ? 12 : 0; else if (pm) h += 12; }
+    return time(h * 3600 + min * 60 + sec);
+  }));
+  def("Date.IsLeapYear", nn("Date.IsLeapYear", [{ name: "date" }], (a) => {
+    const y = a[0]!.kind === "number" ? Math.trunc(a[0]!.value) : asDateish(a[0]!, "Date.IsLeapYear").y;
+    return (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)) ? { kind: "logical", value: true } : { kind: "logical", value: false };
+  }));
   def("Date.Year", nn("Date.Year", [{ name: "date" }], (a) => number(asDateish(a[0]!, "Date.Year").y)));
   def("Date.Month", nn("Date.Month", [{ name: "date" }], (a) => number(asDateish(a[0]!, "Date.Month").m)));
   def("Date.Day", nn("Date.Day", [{ name: "date" }], (a) => number(asDateish(a[0]!, "Date.Day").d)));
@@ -129,6 +152,23 @@ export function registerDateTime(env: Env): void {
     for (let i = 0; i < count; i++) {
       const c = civilFromDays(base + i * stepDays);
       out.push(date(c.y, c.m, c.d));
+    }
+    return { kind: "list", items: out };
+  }));
+  // List.DateTimes(start, count, step): like List.Dates but yields datetime values.
+  def("List.DateTimes", fn("List.DateTimes", [{ name: "start" }, { name: "count" }, { name: "step" }], (a) => {
+    const s = a[0]!;
+    if (s.kind !== "datetime") err("Expression.Error", "List.DateTimes: start must be a datetime.");
+    const count = numOf(a[1]!, "count");
+    const step = a[2]!;
+    if (step.kind !== "duration") err("Expression.Error", "List.DateTimes: step must be a duration.");
+    const base = daysFromCivil(s.y, s.m, s.d) * 86400 + s.secs;
+    const out: MValue[] = [];
+    for (let i = 0; i < count; i++) {
+      const total = base + i * step.secs;
+      const days = Math.floor(total / 86400);
+      const c = civilFromDays(days);
+      out.push(datetime(c.y, c.m, c.d, total - days * 86400));
     }
     return { kind: "list", items: out };
   }));

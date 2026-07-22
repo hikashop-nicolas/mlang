@@ -1,7 +1,7 @@
 // Number.* functions. Number.Round defaults to banker's rounding (RoundingMode.ToEven),
 // per the reference; the rounding cases are oracle-pinned.
 import type { Env } from "../interpret.js";
-import { NULL, err, number, type MValue } from "../values.js";
+import { FALSE, NULL, TRUE, err, number, type MValue } from "../values.js";
 import { fn, numOf } from "./helpers.js";
 import { formatNumber } from "../format.js";
 import { numberFrom } from "./convert.js";
@@ -30,6 +30,23 @@ export function registerNumber(env: Env): void {
   def("Number.NegativeInfinity", number(-Infinity));
   def("Number.NaN", number(NaN));
   def("Number.Epsilon", number(Number.EPSILON));
+  def("Number.PI", number(Math.PI));
+  def("Number.E", number(Math.E));
+  def("Number.IsEven", nn("Number.IsEven", [{ name: "number" }], (a) => (Math.trunc(numOf(a[0]!, "Number.IsEven")) % 2 === 0 ? TRUE : FALSE)));
+  def("Number.IsOdd", nn("Number.IsOdd", [{ name: "number" }], (a) => (Math.abs(Math.trunc(numOf(a[0]!, "Number.IsOdd")) % 2) === 1 ? TRUE : FALSE)));
+  // Byte/Int8/Int16/Int32/Percentage all coerce to a number then round to whole (banker's).
+  const intFrom = (name: string): void => def(name, fn(name, [{ name: "value" }, { name: "culture", optional: true }], (a) => {
+    const v = numberFrom(a[0]!, cultureOf(a[1]?.kind === "text" ? a[1].value : null));
+    return v.kind === "number" ? number(roundToEven(v.value, 0)) : v;
+  }));
+  intFrom("Byte.From");
+  intFrom("Int8.From");
+  intFrom("Int16.From");
+  intFrom("Int32.From");
+  def("Percentage.From", fn("Percentage.From", [{ name: "value" }, { name: "culture", optional: true }], (a) => {
+    if (a[0]!.kind === "text") { const s = a[0]!.value.trim(); if (s.endsWith("%")) { const n = Number(s.slice(0, -1)); return Number.isNaN(n) ? err("Expression.Error", "Percentage.From: invalid value.") : number(n / 100); } }
+    return numberFrom(a[0]!, cultureOf(a[1]?.kind === "text" ? a[1].value : null));
+  }));
   def("Number.FromText", fn("Number.FromText", [{ name: "text" }, { name: "culture", optional: true }], (a) =>
     numberFrom(a[0]!, cultureOf(a[1]?.kind === "text" ? a[1].value : null))));
   // Int64.From: convert then round to a whole number (banker's rounding, oracle-checked).

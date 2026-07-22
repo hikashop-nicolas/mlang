@@ -2,7 +2,7 @@
 // entry points that let queries process embedded data. From the public reference; the
 // CSV/JSON option shapes not covered raise precise errors.
 import type { Env } from "../interpret.js";
-import { NULL, err, list, logical, number, table, text, typeVal, type MFunction, type MType, type MValue } from "../values.js";
+import { NULL, binary, compare, equals as equalsVal, err, list, logical, number, table, text, typeVal, type MFunction, type MType, type MValue } from "../values.js";
 import { fn, listOf, textOf, type Table } from "./helpers.js";
 import { fromJson } from "../host.js";
 import { mtypeOfValue, subtypeOf, valueMatchesType } from "../types.js";
@@ -11,6 +11,37 @@ const asFunc = (v: MValue | undefined, who: string): MFunction => {
   if (!v || v.kind !== "function") err("Expression.Error", `${who}: expected a function.`);
   return v;
 };
+
+/** Coerce to a JS number for Value.* arithmetic (numbers pass; text parses). */
+function numberish(v: MValue, who: string): number {
+  if (v.kind === "number") return v.value;
+  if (v.kind === "text") { const n = Number(v.value); if (!Number.isNaN(n)) return n; }
+  err("Expression.Error", `${who}: cannot use a ${v.kind} value in arithmetic.`);
+}
+
+/** M value -> plain JS ready for JSON.stringify (used by Json.FromValue). */
+function toJsonValue(v: MValue): unknown {
+  switch (v.kind) {
+    case "null": return null;
+    case "logical": return v.value;
+    case "number": return v.value;
+    case "text": return v.value;
+    case "date": return `${String(v.y).padStart(4, "0")}-${String(v.m).padStart(2, "0")}-${String(v.d).padStart(2, "0")}`;
+    case "datetime": case "datetimezone": case "time": case "duration": return String(toJsonScalar(v));
+    case "list": return v.items.map(toJsonValue);
+    case "record": return Object.fromEntries([...v.fields].map(([k, x]) => [k, toJsonValue(x)]));
+    case "error": throw v.error;
+    default: err("Expression.Error", `Json.FromValue: cannot serialize a ${v.kind} value.`);
+  }
+}
+function toJsonScalar(v: Extract<MValue, { kind: "datetime" | "datetimezone" | "time" | "duration" }>): string {
+  if (v.kind === "time") { const t = Math.round(v.secs); return `${String(Math.floor(t / 3600)).padStart(2, "0")}:${String(Math.floor((t % 3600) / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`; }
+  if (v.kind === "duration") return String(v.secs);
+  const date = `${String(v.y).padStart(4, "0")}-${String(v.m).padStart(2, "0")}-${String(v.d).padStart(2, "0")}`;
+  const s = Math.floor(v.secs);
+  const time = `${String(Math.floor(s / 3600)).padStart(2, "0")}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  return v.kind === "datetimezone" ? `${date}T${time}` : `${date}T${time}`;
+}
 
 /** Parse one CSV line honouring RFC-4180 double-quote quoting. */
 function parseCsvLine(line: string, delim: string): string[] {
@@ -122,6 +153,48 @@ export function registerDocument(env: Env): void {
     const sep = a[1] ? textOf(a[1], "separator") : "\n";
     return text(listOf(a[0]!, "Lines.ToText").map((v) => textOf(v, "line")).join(sep));
   }));
+  // Lines.FromBinary(binary, opt quoteStyle, opt includeLineSeparators, opt encoding): decode
+  // then split as Lines.FromText. includeLineSeparators=true keeps the terminator on each line.
+  def("Lines.FromBinary", fn("Lines.FromBinary", [{ name: "binary" }, { name: "quoteStyle", optional: true }, { name: "includeLineSeparators", optional: true }, { name: "encoding", optional: true }], (a) => {
+    const s = sourceText(a[0]!, "Lines.FromBinary");
+    const keep = a[2]?.kind === "logical" && a[2].value;
+    if (keep) {
+      const parts = s.match(/[^\r\n]*(?:\r\n|\n|\r|$)/g) ?? [];
+      if (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
+      return list(parts.map(text));
+    }
+    const parts = s.split(/\r\n|\n|\r/);
+    if (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
+    return list(parts.map(text));
+  }));
+  def("Lines.ToBinary", fn("Lines.ToBinary", [{ name: "lines" }, { name: "lineSeparator", optional: true }, { name: "encoding", optional: true }, { name: "includeByteOrderMark", optional: true }], (a) => {
+    const sep = a[1] ? textOf(a[1], "separator") : "\r\n";
+    const s = listOf(a[0]!, "Lines.ToBinary").map((v) => textOf(v, "line")).join(sep);
+    return binary(new TextEncoder().encode(s));
+  }));
+
+  // Json.FromValue(value, opt encoding) -> UTF-8 binary. Records->objects, lists->arrays,
+  // temporal values serialize to their M/ISO text form.
+  def("Json.FromValue", fn("Json.FromValue", [{ name: "value" }, { name: "encoding", optional: true }], (a) =>
+    binary(new TextEncoder().encode(JSON.stringify(toJsonValue(a[0]!))))));
+
+  // Uri.* — build/escape query strings. M escapes per RFC 3986 (encodeURIComponent, but with
+  // "!'()*" also percent-encoded, which Excel does).
+  const escapeData = (s: string): string => encodeURIComponent(s).replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
+  def("Uri.EscapeDataString", fn("Uri.EscapeDataString", [{ name: "data" }], (a) => text(escapeData(textOf(a[0]!, "Uri.EscapeDataString")))));
+  def("Uri.UnescapeDataString", fn("Uri.UnescapeDataString", [{ name: "data" }], (a) => text(decodeURIComponent(textOf(a[0]!, "Uri.UnescapeDataString")))));
+  def("Uri.BuildQueryString", fn("Uri.BuildQueryString", [{ name: "query" }], (a) => {
+    const rec = a[0]!;
+    if (rec.kind !== "record") err("Expression.Error", "Uri.BuildQueryString: expected a record.");
+    const parts: string[] = [];
+    for (const [k, v] of rec.fields) parts.push(`${escapeData(k)}=${escapeData(v.kind === "text" ? v.value : v.kind === "null" ? "" : String(toJsonValue(v)))}`);
+    return text(parts.join("&"));
+  }));
+  def("Uri.Combine", fn("Uri.Combine", [{ name: "baseUri" }, { name: "relativeUri" }], (a) => {
+    const base = textOf(a[0]!, "Uri.Combine"), rel = textOf(a[1]!, "Uri.Combine");
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(rel)) return text(rel);
+    return text(base.replace(/\/+$/, "") + "/" + rel.replace(/^\/+/, ""));
+  }));
 
   def("Table.FromColumns", fn("Table.FromColumns", [{ name: "lists" }, { name: "columns", optional: true }], (a) => {
     const cols = listOf(a[0]!, "Table.FromColumns").map((c) => listOf(c, "column"));
@@ -177,6 +250,41 @@ export function registerDocument(env: Env): void {
   def("Value.ReplaceType", fn("Value.ReplaceType", [{ name: "value" }, { name: "type" }], (a) => a[0]!));
   def("Value.ReplaceMetadata", fn("Value.ReplaceMetadata", [{ name: "value" }, { name: "metadata" }], (a) => a[0]!));
   def("Value.Metadata", fn("Value.Metadata", [{ name: "value" }], () => ({ kind: "record", fields: new Map() })));
+
+  // Value.Add/Subtract/Multiply/Divide: arithmetic that respects the precision argument's
+  // presence but computes plainly here; null with anything is null (spec).
+  const arith = (name: string, op: (x: number, y: number) => number): void =>
+    def(name, fn(name, [{ name: "value1" }, { name: "value2" }, { name: "precision", optional: true }], (a) => {
+      if (a[0]!.kind === "null" || a[1]!.kind === "null") return NULL;
+      return number(op(numberish(a[0]!, name), numberish(a[1]!, name)));
+    }));
+  arith("Value.Add", (x, y) => x + y);
+  arith("Value.Subtract", (x, y) => x - y);
+  arith("Value.Multiply", (x, y) => x * y);
+  arith("Value.Divide", (x, y) => x / y);
+  def("Value.Compare", fn("Value.Compare", [{ name: "value1" }, { name: "value2" }, { name: "comparer", optional: true }], (a) => {
+    const x = a[0]!, y = a[1]!;
+    if (x.kind === "null" && y.kind === "null") return number(0);
+    if (x.kind === "null") return number(-1);
+    if (y.kind === "null") return number(1);
+    const c = compare(x, y);
+    return number(c < 0 ? -1 : c > 0 ? 1 : 0);
+  }));
+  def("Comparer.Equals", fn("Comparer.Equals", [{ name: "comparer" }, { name: "x" }, { name: "y" }], (a) => {
+    // comparer(x,y)==0 means equal; if a plain comparer function was passed, honour it.
+    if (a[0]!.kind === "function") { const r = a[0]!.call([a[1]!, a[2]!]); return logical(r.kind === "number" ? r.value === 0 : equalsVal(a[1]!, a[2]!)); }
+    return logical(equalsVal(a[1]!, a[2]!));
+  }));
+  def("Comparer.FromCulture", fn("Comparer.FromCulture", [{ name: "culture" }, { name: "ignoreCase", optional: true }], (a) => {
+    const ignore = a[1]?.kind === "logical" && a[1].value;
+    return fn("comparer", [{ name: "x" }, { name: "y" }], (b) => {
+      const x = textOf(b[0]!, "comparer"), y = textOf(b[1]!, "comparer");
+      const [xx, yy] = ignore ? [x.toLowerCase(), y.toLowerCase()] : [x, y];
+      return number(xx < yy ? -1 : xx > yy ? 1 : 0);
+    });
+  }));
+  // Function.IsDataSource: whether a function is a data-source access; unknown here -> false.
+  def("Function.IsDataSource", fn("Function.IsDataSource", [{ name: "function" }], () => logical(false)));
 
   def("Function.Invoke", fn("Function.Invoke", [{ name: "function" }, { name: "args" }], (a) => {
     if (a[0]!.kind !== "function") err("Expression.Error", "Function.Invoke: first argument must be a function.");

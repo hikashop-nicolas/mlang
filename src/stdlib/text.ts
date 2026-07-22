@@ -293,6 +293,19 @@ export function registerText(env: Env): void {
     });
   }));
 
+  // Splitter.SplitTextByRepeatedLengths(lengths): cut the text into fixed-width fields,
+  // repeating the length pattern until the text is consumed.
+  def("Splitter.SplitTextByRepeatedLengths", fn("Splitter.SplitTextByRepeatedLengths", [{ name: "lengths" }, { name: "startAtEnd", optional: true }], (a) => {
+    const lens = (a[0]!.kind === "list" ? a[0]!.items.map((v) => numOf(v, "length")) : [numOf(a[0]!, "length")]);
+    return fn("splitter", [{ name: "text" }], (b) => {
+      const s = textOf(b[0]!, "split input");
+      const out: MValue[] = [];
+      let i = 0, k = 0;
+      while (i < s.length && lens.length) { const len = lens[k % lens.length]!; out.push(text(s.slice(i, i + len))); i += len; k++; }
+      return list(out);
+    });
+  }));
+
   // Replacers (used by Table.ReplaceValue).
   def("Replacer.ReplaceText", fn("Replacer.ReplaceText", [{ name: "value" }, { name: "old" }, { name: "new" }], (a) => {
     const v = a[0]!;

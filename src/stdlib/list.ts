@@ -25,6 +25,22 @@ export function registerList(env: Env): void {
 
   def("List.Transform", fn("List.Transform", [{ name: "list" }, { name: "transform" }], (a) =>
     list(listOf(a[0]!, "List.Transform").map((v) => callFn(a[1]!, [v])))));
+  // List.TransformMany: for each item, produce a collection, then flatten with a result selector.
+  def("List.TransformMany", fn("List.TransformMany", [{ name: "list" }, { name: "collectionTransform" }, { name: "resultTransform" }], (a) => {
+    const out: MValue[] = [];
+    for (const item of listOf(a[0]!, "List.TransformMany")) {
+      for (const sub of listOf(callFn(a[1]!, [item]), "List.TransformMany collection")) out.push(callFn(a[2]!, [item, sub]));
+    }
+    return list(out);
+  }));
+  // List.Split: break a list into sublists of at most pageSize items.
+  def("List.Split", fn("List.Split", [{ name: "list" }, { name: "pageSize" }], (a) => {
+    const items = listOf(a[0]!, "List.Split");
+    const size = Math.max(1, Math.trunc(numOf(a[1]!, "List.Split pageSize")));
+    const out: MValue[] = [];
+    for (let i = 0; i < items.length; i += size) out.push(list(items.slice(i, i + size)));
+    return list(out);
+  }));
   def("List.Select", fn("List.Select", [{ name: "list" }, { name: "selection" }], (a) =>
     list(listOf(a[0]!, "List.Select").filter((v) => truthy(callFn(a[1]!, [v]))))));
   def("List.RemoveNulls", fn("List.RemoveNulls", [{ name: "list" }], (a) =>
@@ -38,6 +54,14 @@ export function registerList(env: Env): void {
     logical(listOf(a[0]!, "List.Contains").some((v) => equals(v, a[1]!)))));
   def("List.PositionOf", fn("List.PositionOf", [{ name: "list" }, { name: "value" }], (a) =>
     number(listOf(a[0]!, "List.PositionOf").findIndex((v) => equals(v, a[1]!)))));
+  def("List.ContainsAll", fn("List.ContainsAll", [{ name: "list" }, { name: "values" }, { name: "equationCriteria", optional: true }], (a) => {
+    const items = listOf(a[0]!, "List.ContainsAll");
+    return logical(listOf(a[1]!, "List.ContainsAll values").every((val) => items.some((v) => equals(v, val))));
+  }));
+  def("List.ContainsAny", fn("List.ContainsAny", [{ name: "list" }, { name: "values" }, { name: "equationCriteria", optional: true }], (a) => {
+    const items = listOf(a[0]!, "List.ContainsAny");
+    return logical(listOf(a[1]!, "List.ContainsAny values").some((val) => items.some((v) => equals(v, val))));
+  }));
 
   def("List.First", fn("List.First", [{ name: "list" }, { name: "default", optional: true }], (a) => {
     const items = listOf(a[0]!, "List.First");
@@ -164,6 +188,25 @@ export function registerList(env: Env): void {
   def("List.RemoveItems", fn("List.RemoveItems", [{ name: "list1" }, { name: "list2" }], (a) => {
     const remove = listOf(a[1]!, "List.RemoveItems");
     return list(listOf(a[0]!, "List.RemoveItems").filter((v) => !remove.some((r) => equals(r, v))));
+  }));
+  def("List.RemoveMatchingItems", fn("List.RemoveMatchingItems", [{ name: "list1" }, { name: "list2" }, { name: "equationCriteria", optional: true }], (a) => {
+    const remove = listOf(a[1]!, "List.RemoveMatchingItems");
+    return list(listOf(a[0]!, "List.RemoveMatchingItems").filter((v) => !remove.some((r) => equals(r, v))));
+  }));
+  // List.RemoveFirstN / RemoveLastN: drop N (or while a condition holds) from an end.
+  def("List.RemoveFirstN", fn("List.RemoveFirstN", [{ name: "list" }, { name: "countOrCondition", optional: true }], (a) => {
+    const items = listOf(a[0]!, "List.RemoveFirstN");
+    if (!a[1]) return list(items.slice(1));
+    if (a[1].kind === "number") return list(items.slice(a[1].value));
+    let i = 0; while (i < items.length && truthy(callFn(a[1], [items[i]!]))) i++;
+    return list(items.slice(i));
+  }));
+  def("List.RemoveLastN", fn("List.RemoveLastN", [{ name: "list" }, { name: "countOrCondition", optional: true }], (a) => {
+    const items = listOf(a[0]!, "List.RemoveLastN");
+    if (!a[1]) return list(items.slice(0, -1));
+    if (a[1].kind === "number") return list(a[1].value >= items.length ? [] : items.slice(0, items.length - a[1].value));
+    let i = items.length; while (i > 0 && truthy(callFn(a[1], [items[i - 1]!]))) i--;
+    return list(items.slice(0, i));
   }));
   def("List.Union", fn("List.Union", [{ name: "lists" }, { name: "equationCriteria", optional: true }], (a) => {
     const out: MValue[] = [];
