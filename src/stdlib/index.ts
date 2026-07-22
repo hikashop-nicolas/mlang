@@ -1,8 +1,9 @@
 // The standard library, one domain per module. Every function raises a precise
 // "unsupported" error for shapes it does not cover, so gaps are visible, never silent.
-import type { Env } from "../interpret.js";
+import { Env, evalNode } from "../interpret.js";
 import { NULL, type MValue } from "../values.js";
-import { fn } from "./helpers.js";
+import { requestParse } from "../async-runtime.js";
+import { fn, textOf } from "./helpers.js";
 import { registerConstants } from "./constants.js";
 import { registerTable } from "./table.js";
 import { registerList } from "./list.js";
@@ -39,5 +40,16 @@ export function registerStdlib(env: Env): void {
     fields.set("Message", a[1] ?? NULL);
     fields.set("Detail", a[2] ?? NULL);
     return { kind: "record", fields };
+  }));
+
+  // Expression.Evaluate(document, environment?): parse and evaluate an M string. The parser is
+  // async, so on a cache miss requestParse throws PendingParse and the replay driver parses it.
+  // The document runs in a fresh root env (full stdlib) plus the environment record's bindings.
+  env.defineValue("Expression.Evaluate", fn("Expression.Evaluate", [{ name: "document" }, { name: "environment", optional: true }], (a) => {
+    const ast = requestParse(textOf(a[0]!, "Expression.Evaluate document"));
+    const sub = new Env();
+    registerStdlib(sub);
+    if (a[1] && a[1].kind === "record") for (const [k, v] of a[1].fields) sub.defineValue(k, v);
+    return evalNode(ast as never, sub);
   }));
 }

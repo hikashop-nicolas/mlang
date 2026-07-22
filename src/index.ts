@@ -36,10 +36,11 @@ function rootEnv(host?: HostBindings): Env {
   return env;
 }
 
-/** Evaluate a single M expression. Async because host connectors may fetch data. */
+/** Evaluate a single M expression. Async because host connectors may fetch data and
+    Expression.Evaluate may parse further M strings. */
 export async function evaluate(expression: string, host?: HostBindings): Promise<MValue> {
   const ast = await parse(expression);
-  return runWithConnectors(() => evalNode(ast as never, rootEnv(host)));
+  return runWithConnectors(() => evalNode(ast as never, rootEnv(host)), parse);
 }
 
 export interface SectionQueries {
@@ -64,7 +65,7 @@ export async function evaluateSection(sectionM: string, host?: HostBindings): Pr
       return runWithConnectors(() => {
         const members = evalSection(ast as never, rootEnv(host));
         return members.get(name)!();
-      });
+      }, parse);
     },
   };
 }

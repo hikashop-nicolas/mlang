@@ -13,6 +13,22 @@ export class PendingConnector {
   ) {}
 }
 
+/** Thrown by Expression.Evaluate for an M string not yet parsed (the parser is async). */
+export class PendingParse {
+  constructor(public readonly source: string) {}
+}
+
+// Parsed-document cache for the current pass (source -> AST, or the parse MError).
+let currentParseCache: Map<string, { ast: unknown } | { err: MError }> | null = null;
+
+/** Return the cached AST for an M source, re-throw its parse error, or request a parse. */
+export function requestParse(source: string): unknown {
+  const hit = currentParseCache?.get(source);
+  if (hit === undefined) throw new PendingParse(source);
+  if ("err" in hit) throw hit.err;
+  return hit.ast;
+}
+
 // A resolved connector caches either its value or the MError it failed with (so the error
 // can be re-thrown at the call site on the next pass, where try...otherwise can catch it).
 type Cached = { readonly ok: MValue } | { readonly failed: MError };
@@ -43,29 +59,47 @@ export function asyncConnector(name: string, resolve: (args: MValue[]) => Promis
 
 const MAX_ROUNDS = 128;
 
-/** Run a synchronous evaluation, resolving async connectors by replay until it completes. */
-export async function runWithConnectors(build: () => MValue): Promise<MValue> {
+/** Run a synchronous evaluation, resolving async connectors AND Expression.Evaluate parses by
+    replay until it completes. `parse` (async) is used for the latter. */
+export async function runWithConnectors(build: () => MValue, parse?: (source: string) => Promise<unknown>): Promise<MValue> {
   const cache = new Map<string, Cached>();
-  const previous = currentCache;
+  const parseCache = new Map<string, { ast: unknown } | { err: MError }>();
+  const prevC = currentCache;
+  const prevP = currentParseCache;
   for (let round = 0; round < MAX_ROUNDS; round++) {
     currentCache = cache;
-    let pending: PendingConnector | null = null;
+    currentParseCache = parseCache;
+    let pendingConn: PendingConnector | null = null;
+    let pendingParse: PendingParse | null = null;
     try {
       return build();
     } catch (e) {
-      if (e instanceof PendingConnector) pending = e;
+      if (e instanceof PendingConnector) pendingConn = e;
+      else if (e instanceof PendingParse) pendingParse = e;
       else throw e;
     } finally {
-      currentCache = previous;
+      currentCache = prevC;
+      currentParseCache = prevP;
     }
-    // Resolve outside the try. A resolver MError is cached so the next pass re-throws it at
-    // the call site (catchable by try...otherwise); anything else is a real failure.
-    try {
-      cache.set(pending.key, { ok: await pending.resolve() });
-    } catch (err) {
-      if (err instanceof MError) cache.set(pending.key, { failed: err });
-      else throw err;
+    // Resolve outside the try. A resolver/parse MError is cached so the next pass re-throws it
+    // at the call site (catchable by try...otherwise); anything else is a real failure.
+    if (pendingConn) {
+      try {
+        cache.set(pendingConn.key, { ok: await pendingConn.resolve() });
+      } catch (err) {
+        if (err instanceof MError) cache.set(pendingConn.key, { failed: err });
+        else throw err;
+      }
+    } else {
+      const src = pendingParse!.source;
+      if (!parse) throw new MError("Expression.Error", "Expression.Evaluate is unavailable (no parser).");
+      try {
+        parseCache.set(src, { ast: await parse(src) });
+      } catch (err) {
+        if (err instanceof MError) parseCache.set(src, { err });
+        else throw err;
+      }
     }
   }
-  throw new MError("Connector.TooMany", `exceeded ${MAX_ROUNDS} connector-resolution rounds (a connector's arguments may depend on its own result).`);
+  throw new MError("Connector.TooMany", `exceeded ${MAX_ROUNDS} resolution rounds (a connector or Expression.Evaluate may be self-referential).`);
 }
