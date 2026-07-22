@@ -1,0 +1,1 @@
+[ Exp = 1, Log = 3, Log10 = 3, Fact = 120, BAnd = 2, BOr = 5, BXor = 5, BShl = 16, BShr = 4, Ins = "aXYbc", RemR = "ad", RepR = "aXYd", Fmt0 = "a-b", FmtN = "1/2" ] 

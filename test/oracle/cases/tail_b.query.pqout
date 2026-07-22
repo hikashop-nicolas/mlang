@@ -1,0 +1,1 @@
+[ Rep = {1, 2, 1, 2, 1, 2} , Pos = {0, 1, 2} , Sing = 5, RToL = {1, 2} , RRen = [ x = 1, b = 2 ] , RTr = [ a = 10, b = 2 ] , BToL = {104, 105} , TRep = #table( type table [A = any] , {{1} , {1} , {1} } ) , TSplit = 2 ] 
