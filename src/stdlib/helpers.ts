@@ -30,7 +30,7 @@ export const namesOf = (v: MValue, who: string): string[] =>
 
 /** Column names from a names list, a single name, or a `type table [...]` value. */
 export const colNamesFromSpec = (v: MValue, who: string): string[] =>
-  v.kind === "type" && v.name.startsWith("table:") ? v.name.slice(6).split("\t").filter(Boolean) : namesOf(v, who);
+  v.kind === "type" && v.name === "table" && v.columns ? v.columns.map((c) => c.name) : namesOf(v, who);
 
 /** {{a,b},{c,d}} pair lists (RenameColumns/TransformColumnTypes shapes). */
 export const pairList = (v: MValue, who: string): MValue[][] => {

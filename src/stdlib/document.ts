@@ -2,9 +2,10 @@
 // entry points that let queries process embedded data. From the public reference; the
 // CSV/JSON option shapes not covered raise precise errors.
 import type { Env } from "../interpret.js";
-import { NULL, err, list, logical, number, table, text, type MFunction, type MValue } from "../values.js";
+import { NULL, err, list, logical, number, table, text, typeVal, type MFunction, type MType, type MValue } from "../values.js";
 import { fn, listOf, textOf, type Table } from "./helpers.js";
 import { fromJson } from "../host.js";
+import { mtypeOfValue, subtypeOf, valueMatchesType } from "../types.js";
 
 const asFunc = (v: MValue | undefined, who: string): MFunction => {
   if (!v || v.kind !== "function") err("Expression.Error", `${who}: expected a function.`);
@@ -168,9 +169,9 @@ export function registerDocument(env: Env): void {
   def("Value.Is", fn("Value.Is", [{ name: "value" }, { name: "type" }], (a) => {
     const ty = a[1]!;
     if (ty.kind !== "type") err("Expression.Error", "Value.Is: second argument must be a type.");
-    return logical(valueMatchesType(a[0]!, ty.name));
+    return logical(valueMatchesType(a[0]!, ty));
   }));
-  def("Value.Type", fn("Value.Type", [{ name: "value" }], (a) => ({ kind: "type", name: a[0]!.kind })));
+  def("Value.Type", fn("Value.Type", [{ name: "value" }], (a) => typeVal(mtypeOfValue(a[0]!))));
   // Value.ReplaceType / ReplaceMetadata are used pervasively to document functions; the
   // ascribed type and metadata are advisory here, so the value passes through unchanged.
   def("Value.ReplaceType", fn("Value.ReplaceType", [{ name: "value" }, { name: "type" }], (a) => a[0]!));
@@ -200,6 +201,22 @@ export function registerDocument(env: Env): void {
   // Expression.Evaluate (dynamic M eval) is deferred: it needs a synchronous parse the async
   // evaluator can't provide inside a sync call, and it's used mainly by test frameworks.
   def("Expression.Identifier", fn("Expression.Identifier", [{ name: "name" }], (a) => text(quoteIdentifier(textOf(a[0]!, "Expression.Identifier")))));
+
+  // --- Type.* --------------------------------------------------------------------------
+  const asType = (v: MValue | undefined, who: string): MType => {
+    if (!v || v.kind !== "type") err("Expression.Error", `${who}: expected a type value.`);
+    return v;
+  };
+  def("Type.Is", fn("Type.Is", [{ name: "type" }, { name: "candidate" }], (a) => logical(subtypeOf(asType(a[0], "Type.Is"), asType(a[1], "Type.Is")))));
+  def("Type.IsNullable", fn("Type.IsNullable", [{ name: "type" }], (a) => logical(!!asType(a[0], "Type.IsNullable").nullable)));
+  def("Type.NonNullable", fn("Type.NonNullable", [{ name: "type" }], (a) => typeVal({ ...asType(a[0], "Type.NonNullable"), nullable: false })));
+  def("Type.ListItem", fn("Type.ListItem", [{ name: "type" }], (a) => typeVal(asType(a[0], "Type.ListItem").item ?? { name: "any" })));
+  def("Type.TableColumn", fn("Type.TableColumn", [{ name: "type" }, { name: "column" }], (a) => {
+    const t = asType(a[0], "Type.TableColumn");
+    const col = t.columns?.find((c) => c.name === textOf(a[1]!, "column"));
+    if (!col) err("Expression.Error", `Type.TableColumn: no column '${textOf(a[1]!, "column")}'.`);
+    return typeVal(col.type);
+  }));
 }
 
 /** Quote an identifier that isn't a bare identifier (as Excel's Expression.Identifier does). */
@@ -211,23 +228,5 @@ function logicalTrue(v: MValue): boolean {
   if (v.kind !== "logical") err("Expression.Error", "Expected a logical value.");
   return v.value;
 }
-
-function valueMatchesType(v: MValue, ty: string): boolean {
-  switch (ty) {
-    case "any": return true;
-    case "number": return v.kind === "number";
-    case "text": return v.kind === "text";
-    case "logical": return v.kind === "logical";
-    case "date": return v.kind === "date";
-    case "time": return v.kind === "time";
-    case "datetime": return v.kind === "datetime";
-    case "duration": return v.kind === "duration";
-    case "record": return v.kind === "record";
-    case "list": return v.kind === "list";
-    case "table": return v.kind === "table";
-    default: return false;
-  }
-}
-
 
 export type { Table };

@@ -1,9 +1,10 @@
 // Table.* functions, implemented from the public reference. Argument shapes not covered
 // yet raise precise "unsupported" errors rather than approximating.
 import type { Env } from "../interpret.js";
-import { MError, NULL, err, expect, list, logical, number, rowRecord, table, text, type MValue } from "../values.js";
+import { MError, NULL, err, expect, list, logical, number, rowRecord, table, text, type MType, type MValue } from "../values.js";
 import { asTable, callFn, cmpWithNulls, colIndex, colNamesFromSpec, fn, keyOf, listOf, namesOf, pairList, subTable, textOf, truthy, type Table } from "./helpers.js";
 import { convertTo, textFrom } from "./convert.js";
+import { typeName } from "../types.js";
 
 const rowsWhere = (t: Table, pred: (i: number) => boolean): number[] => {
   const out: number[] = [];
@@ -22,7 +23,7 @@ export function registerTable(env: Env): void {
     let cols: string[];
     if (a[0]!.kind === "list") cols = a[0]!.items.map((c) => textOf(c, "#table column name"));
     else if (a[0]!.kind === "number") cols = Array.from({ length: a[0]!.value }, (_, i) => `Column${i + 1}`);
-    else if (a[0]!.kind === "type" && a[0]!.name.startsWith("table:")) cols = a[0]!.name.slice(6).split("\t").filter(Boolean);
+    else if (a[0]!.kind === "type" && a[0]!.name === "table" && a[0]!.columns) cols = a[0]!.columns.map((c) => c.name);
     else err("Expression.Error", "#table: unsupported column spec (use a list of names or a column count).");
     const rows = listOf(a[1]!, "#table rows").map((r) => listOf(r, "#table row"));
     for (const r of rows) if (r.length !== cols.length) err("Expression.Error", "#table: row width differs from column count.");
@@ -117,6 +118,26 @@ export function registerTable(env: Env): void {
   def("Table.SelectRowsWithErrors", fn("Table.SelectRowsWithErrors", [{ name: "table" }, { name: "columns", optional: true }], (a) => {
     const t = asTable(a[0]!, "Table.SelectRowsWithErrors");
     return table(t.columns, [], t.types);
+  }));
+  def("Table.ColumnsOfType", fn("Table.ColumnsOfType", [{ name: "table" }, { name: "listOfTypes" }], (a) => {
+    const t = asTable(a[0]!, "Table.ColumnsOfType");
+    const wanted = a[1]!.kind === "list" ? a[1]!.items : [a[1]!];
+    // Excel matches nominally: Int64.Type does NOT match `type number` (oracle). Compare the
+    // ascribed surface name, except `type any` which matches everything.
+    const key = (ty: MType): string => `${ty.ascription ?? ty.name}${ty.nullable ? "?" : ""}`;
+    return list(t.columns.filter((c) => {
+      const ct = t.types?.get(c);
+      return ct !== undefined && wanted.some((w) => w.kind === "type" && (w.name === "any" || key(w) === key(ct)));
+    }).map(text));
+  }));
+  def("Table.Schema", fn("Table.Schema", [{ name: "table" }], (a) => {
+    const t = asTable(a[0]!, "Table.Schema");
+    const cols = ["Name", "Position", "TypeName", "Kind", "IsNullable"];
+    const rows = t.columns.map((c, i) => {
+      const ty = t.types?.get(c);
+      return [text(c), number(i), text(ty ? typeName(ty) : "Any.Type"), text(ty?.name ?? "any"), logical(!!ty?.nullable)];
+    });
+    return table(cols, rows);
   }));
   // We never produce per-cell error values (FIDELITY: AddColumn stores null), so there is
   // nothing to replace - this validates the columns and returns the table unchanged.
@@ -215,9 +236,9 @@ export function registerTable(env: Env): void {
     for (const [colV, typeV] of pairList(a[1]!, "Table.TransformColumnTypes")) {
       const col = textOf(colV!, "transform column");
       const ci = colIndex(t, col);
-      const ty = typeV!.kind === "type" ? typeV!.name : err("Expression.Error", "Expected a type value.");
-      types.set(col, ty);
-      for (const r of rows) r[ci] = convertTo(r[ci] ?? NULL, ty, col);
+      if (typeV!.kind !== "type") err("Expression.Error", "Expected a type value.");
+      types.set(col, typeV as MType);
+      for (const r of rows) r[ci] = convertTo(r[ci] ?? NULL, typeV!.name, col);
     }
     return table(t.columns, rows, types);
   }));

@@ -14,9 +14,22 @@ export type MValue =
   | { kind: "binary"; bytes: Uint8Array }
   | { kind: "list"; items: MValue[] }
   | { kind: "record"; fields: Map<string, MValue> } // insertion-ordered
-  | { kind: "table"; columns: string[]; rows: MValue[][]; types?: Map<string, string> }
+  | { kind: "table"; columns: string[]; rows: MValue[][]; types?: Map<string, MType> }
   | MFunction
-  | { kind: "type"; name: string; nullable?: boolean };
+  | MTypeValue;
+
+/** Structured M type. `name` is the primitive kind; the optional fields describe compound
+    types. `ascription` preserves the surface name (e.g. Int64.Type) for reporting. */
+export interface MType {
+  name: string; // any | none | null | logical | number | text | binary | date | time | datetime | datetimezone | duration | list | record | table | function | type
+  nullable?: boolean;
+  ascription?: string;
+  item?: MType; // list item type
+  columns?: { name: string; type: MType }[]; // table columns
+  fields?: { name: string; type: MType; optional?: boolean }[]; // record fields
+  open?: boolean; // open record type
+}
+export type MTypeValue = { kind: "type" } & MType;
 
 export interface MFunction {
   kind: "function";
@@ -56,8 +69,10 @@ export const time = (secs: number): MValue => ({ kind: "time", secs });
 export const datetime = (y: number, m: number, d: number, secs: number): MValue => ({ kind: "datetime", y, m, d, secs });
 export const duration = (secs: number): MValue => ({ kind: "duration", secs });
 export const binary = (bytes: Uint8Array): MValue => ({ kind: "binary", bytes });
+export const typeVal = (t: MType): MTypeValue => ({ kind: "type", ...t });
+export const primType = (name: string, extra: Partial<MType> = {}): MTypeValue => ({ kind: "type", name, ...extra });
 export const record = (entries: [string, MValue][]): MValue => ({ kind: "record", fields: new Map(entries) });
-export const table = (columns: string[], rows: MValue[][], types?: Map<string, string>): MValue => ({ kind: "table", columns, rows, types });
+export const table = (columns: string[], rows: MValue[][], types?: Map<string, MType>): MValue => ({ kind: "table", columns, rows, types });
 
 export function err(reason: string, message: string, detail?: MValue): never {
   throw new MError(reason, message, detail);
@@ -121,7 +136,7 @@ export function equals(a: MValue, b: MValue): boolean {
         a.rows.every((r, i) => r.every((v, j) => equals(v, bt.rows[i]![j]!)))
       );
     }
-    case "type": return a.name === (b as typeof a).name;
+    case "type": return a.name === (b as typeof a).name && !!a.nullable === !!(b as typeof a).nullable;
     case "function": return a === b;
   }
 }

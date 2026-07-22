@@ -1,7 +1,7 @@
 // Library enum constants (plain numbers, per the reference; values oracle-pinned by the
 // constants.query.pq case).
 import type { Env } from "../interpret.js";
-import { number, type MValue } from "../values.js";
+import { number, primType, type MValue } from "../values.js";
 
 const N = (v: number): MValue => number(v);
 
@@ -48,14 +48,22 @@ export function registerConstants(env: Env): void {
 
   // Ascribed type values (the `X.Type` names Excel emits in TransformColumnTypes). The .name
   // routes conversion in convert.ts; the numeric family all coerces to a number.
-  const ty = (coerce: string): MValue => ({ kind: "type", name: coerce });
-  for (const n of ["Int64.Type", "Number.Type", "Decimal.Type", "Currency.Type", "Percentage.Type"]) def(n, ty("number"));
-  def("Text.Type", ty("text"));
-  def("Logical.Type", ty("logical"));
-  def("Date.Type", ty("date"));
-  def("Time.Type", ty("time"));
-  def("DateTime.Type", ty("datetime"));
-  def("Duration.Type", ty("duration"));
-  def("Binary.Type", ty("binary"));
-  def("Any.Type", ty("any"));
+  // Ascribed numeric types share the "number" primitive but keep their surface name.
+  for (const n of ["Int64.Type", "Number.Type", "Decimal.Type", "Currency.Type", "Percentage.Type"]) def(n, primType("number", { ascription: n }));
+  def("Text.Type", primType("text", { ascription: "Text.Type" }));
+  def("Logical.Type", primType("logical", { ascription: "Logical.Type" }));
+  def("Date.Type", primType("date", { ascription: "Date.Type" }));
+  def("Time.Type", primType("time", { ascription: "Time.Type" }));
+  def("DateTime.Type", primType("datetime", { ascription: "DateTime.Type" }));
+  def("DateTimeZone.Type", primType("datetimezone", { ascription: "DateTimeZone.Type" }));
+  def("Duration.Type", primType("duration", { ascription: "Duration.Type" }));
+  def("Binary.Type", primType("binary", { ascription: "Binary.Type" }));
+  def("List.Type", primType("list", { ascription: "List.Type", item: { name: "any" } }));
+  def("Record.Type", primType("record", { ascription: "Record.Type" }));
+  def("Table.Type", primType("table", { ascription: "Table.Type" }));
+  def("Function.Type", primType("function", { ascription: "Function.Type" }));
+  def("Type.Type", primType("type", { ascription: "Type.Type" }));
+  def("Null.Type", primType("null", { ascription: "Null.Type", nullable: true }));
+  def("None.Type", primType("none", { ascription: "None.Type" }));
+  def("Any.Type", primType("any", { ascription: "Any.Type" }));
 }

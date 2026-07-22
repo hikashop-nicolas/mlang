@@ -3,8 +3,9 @@
 // propagate until try...otherwise; null propagates through arithmetic; three-valued and/or.
 // The parser AST is consumed structurally (one place to adapt if its shape changes).
 
-import { MError, NULL, date, datetime, duration, err, equals, compare, logical, number, text, time, rowRecord, type MFunction, type MValue } from "./values.js";
+import { MError, NULL, date, datetime, duration, err, equals, compare, logical, number, text, time, rowRecord, type MFunction, type MType, type MValue } from "./values.js";
 import { civilFromDays, daysFromCivil } from "./temporal.js";
+import { valueMatchesType } from "./types.js";
 
 // Minimal structural view of parser nodes; every access goes through helpers below.
 interface Node {
@@ -270,23 +271,17 @@ export function evalNode(n: Node, env: Env): MValue {
       return evalNode(child(n, "left"), env);
     case "IsExpression": {
       const v = evalNode(child(n, "left"), env);
-      const t = typeOfNode(child(n, "right"));
-      return logical(matchesPrimitive(v, t));
+      return logical(valueMatchesType(v, structuredType(child(n, "right"))));
     }
     case "MetadataExpression":
       // `value meta record` - the metadata is advisory; evaluate and return the value.
       return evalNode(child(n, "left"), env);
-    case "TypePrimaryType": {
-      const paired = child(n, "paired");
-      // `type table [Col = t, ...]` - encode the column names so #table can consume it.
-      if (paired.kind === "TableType") {
-        const specs = tableTypeFields(paired);
-        return { kind: "type", name: `table:${specs.join("\t")}` };
-      }
-      return { kind: "type", name: primitiveName(paired) };
-    }
+    case "TypePrimaryType":
+      return { kind: "type", ...structuredType(child(n, "paired")) };
     case "PrimitiveType":
       return { kind: "type", name: primitiveName(n) };
+    case "NullablePrimitiveType":
+      return { kind: "type", name: primitiveName(child(n, "paired")), nullable: true };
     case "NotImplementedExpression":
       err("Expression.Error", "Not implemented (...)");
     default:
@@ -473,45 +468,31 @@ const expectLogical = (v: MValue): boolean => {
 
 const primitiveName = (n: Node): string => (n.primitiveTypeKind as string) ?? "any";
 
-/** Column names from a `table [Col = t, ...]` type node (decoding #"quoted" identifiers). */
-function tableTypeFields(tableType: Node): string[] {
-  const list = asNode(tableType.rowType ?? tableType.fields ?? tableType.content);
-  // Walk to the FieldSpecificationList's ArrayWrapper of FieldSpecification nodes.
+/** Field/column names from a table- or record-type node (decoding #"quoted" identifiers). */
+function typeFieldNames(node: Node): string[] {
   const specs: Node[] = [];
-  const collect = (node: unknown): void => {
-    const nd = node as Node;
-    if (!nd || typeof nd !== "object") return;
-    if (nd.kind === "FieldSpecification") specs.push(nd);
-    for (const v of Object.values(nd)) {
+  const collect = (nd: unknown): void => {
+    const n = nd as Node;
+    if (!n || typeof n !== "object") return;
+    if (n.kind === "FieldSpecification") specs.push(n);
+    for (const v of Object.values(n)) {
       if (Array.isArray(v)) v.forEach((x) => collect((x as Node)?.node ?? x));
       else if (v && typeof v === "object") collect(v);
     }
   };
-  collect(list.elements ? list : tableType);
+  collect(node);
   return specs.map((s) => decodeIdentifier(child(s, "name").literal as string));
 }
-const typeOfNode = (n: Node): string => (n.kind === "PrimitiveType" ? primitiveName(n) : n.kind === "NullablePrimitiveType" ? primitiveName(child(n, "paired")) : "any");
 
-function matchesPrimitive(v: MValue, t: string): boolean {
-  switch (t) {
-    case "any": return true;
-    case "null": return v.kind === "null";
-    case "logical": return v.kind === "logical";
-    case "number": return v.kind === "number";
-    case "text": return v.kind === "text";
-    case "list": return v.kind === "list";
-    case "record": return v.kind === "record";
-    case "table": return v.kind === "table";
-    case "function": return v.kind === "function";
-    case "date": return v.kind === "date";
-    case "time": return v.kind === "time";
-    case "datetime": return v.kind === "datetime";
-    case "duration": return v.kind === "duration";
-    case "binary": return v.kind === "binary";
-    default: return false;
-  }
+/** Build a structured type from a PrimaryType AST node (columns/fields typed loosely). */
+function structuredType(node: Node): MType {
+  if (node.kind === "TableType") return { name: "table", columns: typeFieldNames(node).map((name) => ({ name, type: { name: "any" } })) };
+  if (node.kind === "RecordType") return { name: "record", fields: typeFieldNames(node).map((name) => ({ name, type: { name: "any" } })) };
+  if (node.kind === "ListType") return { name: "list", item: { name: "any" } };
+  if (node.kind === "FunctionType") return { name: "function" };
+  if (node.kind === "NullableType" || node.kind === "NullablePrimitiveType") return { ...structuredType(child(node, "paired")), nullable: true };
+  return { name: primitiveName(node) };
 }
-
 // --- section documents -----------------------------------------------------------
 
 /** Evaluate a section document: every member becomes a lazy binding; returns the member map. */
