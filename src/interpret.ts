@@ -60,6 +60,13 @@ export class Env {
   has(name: string): boolean {
     return this.vars.has(name) || (this.parent?.has(name) ?? false);
   }
+  /** All already-resolved bindings up the chain (for #shared). Thunks are skipped to avoid
+      forcing lazy/connector-backed values. */
+  snapshot(): Map<string, MValue> {
+    const out = new Map<string, MValue>();
+    for (let e: Env | null = this; e; e = e.parent) for (const [k, t] of e.vars) if (!out.has(k) && t.forced !== undefined) out.set(k, t.forced);
+    return out;
+  }
 }
 
 // --- literal decoding ----------------------------------------------------------

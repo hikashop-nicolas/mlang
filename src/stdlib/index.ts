@@ -44,12 +44,15 @@ export function registerStdlib(env: Env): void {
 
   // Expression.Evaluate(document, environment?): parse and evaluate an M string. The parser is
   // async, so on a cache miss requestParse throws PendingParse and the replay driver parses it.
-  // The document runs in a fresh root env (full stdlib) plus the environment record's bindings.
+  // Per the spec (oracle-confirmed) the document sees ONLY the environment record's bindings -
+  // NOT the standard library. Pass #shared as the environment for library access.
   env.defineValue("Expression.Evaluate", fn("Expression.Evaluate", [{ name: "document" }, { name: "environment", optional: true }], (a) => {
     const ast = requestParse(textOf(a[0]!, "Expression.Evaluate document"));
     const sub = new Env();
-    registerStdlib(sub);
     if (a[1] && a[1].kind === "record") for (const [k, v] of a[1].fields) sub.defineValue(k, v);
     return evalNode(ast as never, sub);
   }));
+
+  // #shared: a record of every name in scope (the standard library here), for Expression.Evaluate.
+  env.defineValue("#shared", { kind: "record", fields: env.snapshot() });
 }

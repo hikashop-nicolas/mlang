@@ -6,8 +6,12 @@ const js = async (m: string): Promise<unknown> => toJS(await evaluate(m));
 describe("Expression.Evaluate", () => {
   it("evaluates an M string (stdlib in scope)", async () => {
     expect(await js(`Expression.Evaluate("1 + 2 * 3")`)).toBe(7);
-    expect(await js(`Expression.Evaluate("Text.Upper(""hi"")")`)).toBe("HI");
+    expect(await js(`Expression.Evaluate("Text.Upper(""hi"")", #shared)`)).toBe("HI");
     expect(await js(`Expression.Evaluate("let a = 2 in a + 3")`)).toBe(5);
+  });
+
+  it("without an environment the library is NOT in scope", async () => {
+    await expect(js(`Expression.Evaluate("Text.Upper(""a"")")`)).rejects.toThrow(/wasn.t recognized/);
   });
 
   it("honours the environment record", async () => {
@@ -24,7 +28,7 @@ describe("Expression.Evaluate", () => {
   });
 
   it("works inside a section member", async () => {
-    const section = await evaluateSection(`section Section1;\nshared Q = Expression.Evaluate("Number.Abs(-9)");`, {});
+    const section = await evaluateSection(`section Section1;\nshared Q = Expression.Evaluate("Number.Abs(-9)", #shared);`, {});
     expect(toJS(await section.run("Q"))).toBe(9);
   });
 });
