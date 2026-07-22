@@ -6,7 +6,7 @@ import { fn, numOf } from "./helpers.js";
 import { formatNumber } from "../format.js";
 import { nextRandom } from "../async-runtime.js";
 import { numberFrom } from "./convert.js";
-import { cultureOf } from "../culture.js";
+import { cultureOf, formatCurrency, isInvariant, numberSeparators } from "../culture.js";
 
 const nn = (name: string, params: { name: string; optional?: boolean }[], f: (args: MValue[]) => MValue) =>
   fn(name, params, (a) => (a[0] && a[0].kind === "null" ? NULL : f(a)));
@@ -159,10 +159,12 @@ export function registerNumber(env: Env): void {
   def("Number.ToText", nn("Number.ToText", [{ name: "number" }, { name: "format", optional: true }, { name: "culture", optional: true }], (a) => {
     const v = numOf(a[0]!, "Number.ToText");
     const f = a[1];
-    if (!f || f.kind === "null") return { kind: "text", value: String(v) };
+    const c = cultureOf(a[2]?.kind === "text" ? a[2].value : null);
+    if (!f || f.kind === "null") return { kind: "text", value: isInvariant(c) ? String(v) : String(v).replace(".", numberSeparators(c).decimal) };
     if (f.kind !== "text") err("Expression.Error", "Number.ToText: format must be text.");
     try {
-      return { kind: "text", value: formatNumber(v, f.value) };
+      const sep = numberSeparators(c);
+      return { kind: "text", value: formatNumber(v, f.value, { decimal: sep.decimal, group: sep.group, currency: (val, digits) => formatCurrency(c, val, digits) }) };
     } catch (e) {
       err("Expression.Error", (e as Error).message);
     }

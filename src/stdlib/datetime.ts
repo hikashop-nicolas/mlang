@@ -4,7 +4,7 @@
 import type { Env } from "../interpret.js";
 import { NULL, date, datetime, datetimezone, duration, err, logical, number, record, text, time, type MValue } from "../values.js";
 import { END_OF_DAY_SECS, addMonths, civilFromDays, dateTimeToSerial, dayOfWeekSunday0, daysFromCivil, daysInMonth, parseDateTimeText, parseDateTimeZoneText, parseDateText, serialToDateTime, usDate, usDateTime, usTimeShort } from "../temporal.js";
-import { cultureOf, parseDateCulture } from "../culture.js";
+import { cultureOf, isInvariant, localeNames, parseDateCulture, type Culture } from "../culture.js";
 import { fn, numOf } from "./helpers.js";
 import { currentClockMs, currentOffsetMinutes } from "../async-runtime.js";
 import { formatCustom, standardDateTimePattern } from "../format.js";
@@ -23,10 +23,36 @@ function formatArg(v: MValue | undefined): string | null {
   err("Expression.Error", "ToText: unsupported format argument.");
 }
 
-function applyDateTimeFormat(fmt: string, parts: { y: number; mo: number; d: number; secs: number }, has: { date: boolean; time: boolean }): string {
-  const pattern = fmt.length === 1 ? standardDateTimePattern(fmt) : null;
+/** Intl-format a standard single-letter date/time format for a non-invariant culture. */
+function intlStandard(letter: string, parts: { y: number; mo: number; d: number; secs: number }, has: { date: boolean; time: boolean }, culture: Culture): string | null {
+  const s = Math.floor(parts.secs);
+  const dt = new Date(Date.UTC(parts.y, parts.mo - 1, parts.d, Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60));
+  const D: Intl.DateTimeFormatOptions = { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "UTC" };
+  const LD: Intl.DateTimeFormatOptions = { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" };
+  const T: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", timeZone: "UTC" };
+  const LT: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "UTC" };
+  const fmt = (o: Intl.DateTimeFormatOptions): string => new Intl.DateTimeFormat(culture.name, o).format(dt);
   try {
-    return formatCustom(pattern ?? fmt, parts, has);
+    switch (letter) {
+      case "d": return has.date ? fmt(D) : null;
+      case "D": return has.date ? fmt(LD) : null;
+      case "t": return has.time ? fmt(T) : null;
+      case "T": return has.time ? fmt(LT) : null;
+      case "g": return has.date && has.time ? `${fmt(D)} ${fmt(T)}` : null;
+      case "G": return has.date && has.time ? `${fmt(D)} ${fmt(LT)}` : null;
+      default: return null; // "s" (sortable) is culture-independent -> custom pattern
+    }
+  } catch { return null; }
+}
+
+function applyDateTimeFormat(fmt: string, parts: { y: number; mo: number; d: number; secs: number }, has: { date: boolean; time: boolean }, culture: Culture): string {
+  try {
+    if (fmt.length === 1 && !isInvariant(culture)) {
+      const s = intlStandard(fmt, parts, has, culture);
+      if (s !== null) return s;
+    }
+    const pattern = fmt.length === 1 ? standardDateTimePattern(fmt) : null;
+    return formatCustom(pattern ?? fmt, parts, has, isInvariant(culture) ? undefined : localeNames(culture));
   } catch (e) {
     err("Expression.Error", (e as Error).message);
   }
@@ -172,11 +198,18 @@ export function registerDateTime(env: Env): void {
   }));
   const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const cultureArg = (v: MValue | undefined): Culture => cultureOf(v && v.kind === "text" ? v.value : null);
   def("Date.DayOfWeekName", nn("Date.DayOfWeekName", [{ name: "date" }, { name: "culture", optional: true }], (a) => {
     const d = asDateish(a[0]!, "Date.DayOfWeekName");
-    return text(DAY_NAMES[dayOfWeekSunday0(daysFromCivil(d.y, d.m, d.d))]!);
+    const c = cultureArg(a[1]);
+    const names = isInvariant(c) ? DAY_NAMES : localeNames(c).days;
+    return text(names[dayOfWeekSunday0(daysFromCivil(d.y, d.m, d.d))]!);
   }));
-  def("Date.MonthName", nn("Date.MonthName", [{ name: "date" }, { name: "culture", optional: true }], (a) => text(MONTH_NAMES[asDateish(a[0]!, "Date.MonthName").m - 1]!)));
+  def("Date.MonthName", nn("Date.MonthName", [{ name: "date" }, { name: "culture", optional: true }], (a) => {
+    const c = cultureArg(a[1]);
+    const names = isInvariant(c) ? MONTH_NAMES : localeNames(c).months;
+    return text(names[asDateish(a[0]!, "Date.MonthName").m - 1]!);
+  }));
   def("Date.ToRecord", nn("Date.ToRecord", [{ name: "date" }], (a) => {
     const d = asDateish(a[0]!, "Date.ToRecord");
     return record([["Year", number(d.y)], ["Month", number(d.m)], ["Day", number(d.d)]]);
@@ -319,8 +352,10 @@ export function registerDateTime(env: Env): void {
   def("Date.ToText", nn("Date.ToText", [{ name: "date" }, { name: "format", optional: true }, { name: "culture", optional: true }], (a) => {
     const d = asDateish(a[0]!, "Date.ToText");
     const f = formatArg(a[1]);
-    if (f !== null) return text(applyDateTimeFormat(f, { y: d.y, mo: d.m, d: d.d, secs: d.secs }, { date: true, time: false }));
-    return text(usDate(d.y, d.m, d.d));
+    const c = cultureArg(a[2]);
+    const parts = { y: d.y, mo: d.m, d: d.d, secs: d.secs };
+    if (f !== null) return text(applyDateTimeFormat(f, parts, { date: true, time: false }, c));
+    return text(isInvariant(c) ? usDate(d.y, d.m, d.d) : applyDateTimeFormat("d", parts, { date: true, time: false }, c));
   }));
 
   // --- Time.* ------------------------------------------------------------------
@@ -354,7 +389,8 @@ export function registerDateTime(env: Env): void {
     const v = a[0]!;
     if (v.kind !== "time") err("Expression.Error", "Time.ToText: expected a time.");
     const f = formatArg(a[1]);
-    if (f !== null) return text(applyDateTimeFormat(f, { y: 1, mo: 1, d: 1, secs: v.secs }, { date: false, time: true }));
+    const c = cultureArg(a[2]);
+    if (f !== null) return text(applyDateTimeFormat(f, { y: 1, mo: 1, d: 1, secs: v.secs }, { date: false, time: true }, c));
     return text(usTimeShort(v.secs));
   }));
 
@@ -388,8 +424,10 @@ export function registerDateTime(env: Env): void {
     const v = a[0]!;
     if (v.kind !== "datetime") err("Expression.Error", "DateTime.ToText: expected a datetime.");
     const f = formatArg(a[1]);
-    if (f !== null) return text(applyDateTimeFormat(f, { y: v.y, mo: v.m, d: v.d, secs: v.secs }, { date: true, time: true }));
-    return text(usDateTime(v.y, v.m, v.d, v.secs));
+    const c = cultureArg(a[2]);
+    const parts = { y: v.y, mo: v.m, d: v.d, secs: v.secs };
+    if (f !== null) return text(applyDateTimeFormat(f, parts, { date: true, time: true }, c));
+    return text(isInvariant(c) ? usDateTime(v.y, v.m, v.d, v.secs) : applyDateTimeFormat("G", parts, { date: true, time: true }, c));
   }));
   def("DateTime.FromText", nn("DateTime.FromText", [{ name: "text" }, { name: "options", optional: true }], (a) => {
     const p = parseDateTimeText(expectText(a[0]!, "DateTime.FromText"));
