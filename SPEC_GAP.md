@@ -136,6 +136,19 @@ Shallow spots resolved (2026-07-22, verified against the reference):
 - Table.Profile columns confirmed correct (Column + Min/Max/Average/StandardDeviation/Count/
   NullCount/DistinctCount).
 
+## Completeness assessment (2026-07-22)
+
+The function reference is fully covered and the language core is complete. A pass over the
+remaining axes found one small language gap (now fixed) and the genuine remaining divergences:
+
+- **Fixed:** `try X catch (e) => h` was treated as a bare try (handler ignored); the
+  CatchExpression handler is now wired to call the handler with the error record.
+- **Remaining behavioural gaps** (tracked in FIDELITY.md, none are missing functions):
+  culture-aware *output* formatting is en-US only (`Date.ToText`/`Number.ToText`/`Date.MonthName`
+  don't localize - most visible for fr/ja); numbers are IEEE doubles (no Decimal precision,
+  Int64 > 2^53 loses precision); `as type` is a pass-through (no runtime conformance check).
+  These are quality/fidelity refinements, not coverage gaps.
+
 ## Intentionally skipped - folding / partition / query-plan (no client-side meaning)
 
 Table.AddJoinColumn, Table.FromPartitions, Table.PartitionKey, Table.PartitionValues,

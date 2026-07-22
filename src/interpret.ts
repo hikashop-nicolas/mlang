@@ -202,7 +202,9 @@ export function evalNode(n: Node, env: Env): MValue {
       return itemAccess(env.lookup("_"), n, env);
     case "ErrorHandlingExpression": {
       const handler = n.handler ? asNode(n.handler) : null;
-      const bareTry = !handler || handler.kind !== "OtherwiseExpression";
+      const isOtherwise = handler?.kind === "OtherwiseExpression";
+      const isCatch = handler?.kind === "CatchExpression";
+      const bareTry = !isOtherwise && !isCatch;
       try {
         const v = evalNode(child(n, "protectedExpression"), env);
         if (v.kind === "error") throw v.error; // a contained error value is caught by try
@@ -214,7 +216,14 @@ export function evalNode(n: Node, env: Env): MValue {
         return { kind: "record", fields };
       } catch (e) {
         if (!(e instanceof MError)) throw e;
-        if (!bareTry) return evalNode(child(handler!, "paired"), env);
+        if (isOtherwise) return evalNode(child(handler!, "paired"), env);
+        if (isCatch) {
+          // `catch (e) => body`: the handler is a function called with the error record
+          // (or no argument, for a nullary `catch () => body`).
+          const fnVal = evalNode(child(handler!, "paired"), env);
+          const arity = fnVal.kind === "function" ? fnVal.params.length : 0;
+          return fnVal.kind === "function" ? fnVal.call(arity >= 1 ? [e.toRecord()] : []) : err("Expression.Error", "try...catch handler must be a function.");
+        }
         const fields = new Map<string, MValue>();
         fields.set("HasError", logical(true));
         fields.set("Error", e.toRecord());

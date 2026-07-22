@@ -26,4 +26,11 @@ describe("per-cell errors", () => {
     // reading a good cell is unaffected
     expect(await js(`(${T}){0}[N]`)).toBe(1);
   });
+
+  it("try...catch runs the handler with the error record", async () => {
+    expect(await js(`try error "boom" catch (e) => e[Message]`)).toBe("boom");
+    expect(await js(`try error Error.Record("R", "msg") catch (e) => e[Reason]`)).toBe("R");
+    expect(await js(`try 1 + 1 catch (e) => -1`)).toBe(2); // no error -> value passes through
+    expect(await js(`try error "x" catch () => "handled"`)).toBe("handled"); // nullary catch
+  });
 });
