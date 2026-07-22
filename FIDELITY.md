@@ -36,7 +36,6 @@ src/oracle.test.ts.
 
 - Numbers are IEEE doubles only (no decimal/precision mode).
 - `as type` ascriptions are pass-throughs (no runtime conformance check yet).
-- `Table.AddColumn` stores `null` where Excel stores a per-cell error value.
 - Dates/times/durations/binary are not implemented yet (Tier 1).
 - Table column types are tracked loosely; the oracle serializes untyped columns as `any`,
   which the comparator ignores (names + values are compared).
