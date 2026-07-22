@@ -187,7 +187,6 @@ export function registerDocument(env: Env): void {
     return a[0]!.call([]);
   }));
 
-  def("Type.ToText", fn("Type.ToText", [{ name: "type" }], (a) => text(a[0]!.kind === "type" ? a[0]!.name : a[0]!.kind)));
   def("Value.FromText", fn("Value.FromText", [{ name: "text" }, { name: "culture", optional: true }], (a) => {
     const s = textOf(a[0]!, "Value.FromText").trim();
     if (s === "") return NULL;

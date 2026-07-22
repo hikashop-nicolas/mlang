@@ -93,9 +93,23 @@ export function registerTable(env: Env): void {
     const t = asTable(a[0]!, "Table.CombineColumns");
     const srcIdx = namesOf(a[1]!, "column").map((c) => colIndex(t, c));
     const newName = textOf(a[3]!, "new column name");
-    const keep = t.columns.map((_, i) => i).filter((i) => !srcIdx.includes(i));
-    const columns = [...keep.map((i) => t.columns[i]!), newName];
-    const rows = t.rows.map((r) => [...keep.map((i) => r[i] ?? NULL), callFn(a[2]!, [list(srcIdx.map((i) => r[i] ?? NULL))])]);
+    const srcSet = new Set(srcIdx);
+    const firstSrc = Math.min(...srcIdx);
+    // The combined column takes the position of the first source column (oracle-confirmed).
+    const columns: string[] = [];
+    for (let i = 0; i < t.columns.length; i++) {
+      if (i === firstSrc) columns.push(newName);
+      if (!srcSet.has(i)) columns.push(t.columns[i]!);
+    }
+    const rows = t.rows.map((r) => {
+      const combined = callFn(a[2]!, [list(srcIdx.map((i) => r[i] ?? NULL))]);
+      const out: MValue[] = [];
+      for (let i = 0; i < t.columns.length; i++) {
+        if (i === firstSrc) out.push(combined);
+        if (!srcSet.has(i)) out.push(r[i] ?? NULL);
+      }
+      return out;
+    });
     return table(columns, rows);
   }));
   // No per-cell error values in our model, so these validate and pass through / select none.

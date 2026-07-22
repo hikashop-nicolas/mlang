@@ -9,6 +9,5 @@
     RecFT = Record.FromTable(#table({"Name", "Value"}, {{"a", 1}, {"b", 2}})),
     DIM = Date.DaysInMonth(#date(2020, 2, 1)),
     AQ = Date.AddQuarters(#date(2021, 1, 15), 2),
-    VFT = Value.FromText("42"),
-    TTT = Type.ToText(type number)
+    VFT = Value.FromText("42")
 ]

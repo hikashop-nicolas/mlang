@@ -43,8 +43,8 @@ describe("Tier-2 batch 4", () => {
     const exp = (await js(`Table.ExpandListColumn(#table({"K", "L"}, {{1, {10, 20}}}), "L")`)) as T;
     expect(exp.rows).toEqual([[1, 10], [1, 20]]);
     const comb = (await js(`Table.CombineColumns(#table({"A", "B", "C"}, {{"x", "y", 1}}), {"A", "B"}, Combiner.CombineTextByDelimiter("-"), "AB")`)) as T;
-    expect(comb.columns).toEqual(["C", "AB"]);
-    expect(comb.rows).toEqual([[1, "x-y"]]);
+    expect(comb.columns).toEqual(["AB", "C"]);
+    expect(comb.rows).toEqual([["x-y", 1]]);
     expect(await js(`Table.TransformRows(#table({"A"}, {{1}, {2}}), each [A] * 10)`)).toEqual([10, 20]);
   });
 
