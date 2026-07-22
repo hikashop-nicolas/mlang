@@ -38,10 +38,7 @@ describe("Tier-2 batch 3", () => {
     expect(await js(`Table.ToRecords(#table({"A"}, {{1}, {2}}))`)).toEqual([{ A: 1 }, { A: 2 }]);
   });
 
-  it("Table.ColumnsOfType / ReplaceErrorValues", async () => {
-    const typed = `Table.TransformColumnTypes(#table({"N", "S"}, {{"1", "x"}}), {{"N", type number}})`;
-    expect(await js(`Table.ColumnsOfType(${typed}, {type number})`)).toEqual(["N"]);
-    // No error cells exist in our model, so ReplaceErrorValues is a validated no-op.
+  it("Table.ReplaceErrorValues (no-op in our error-free model)", async () => {
     expect(((await js(`Table.ReplaceErrorValues(#table({"A"}, {{1}}), {{"A", 0}})`)) as T).rows).toEqual([[1]]);
   });
 });

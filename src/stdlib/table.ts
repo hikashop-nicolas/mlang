@@ -73,11 +73,6 @@ export function registerTable(env: Env): void {
     for (const [colV] of pairList(a[1]!, "Table.ReplaceErrorValues")) colIndex(t, textOf(colV!, "column"));
     return t;
   }));
-  def("Table.ColumnsOfType", fn("Table.ColumnsOfType", [{ name: "table" }, { name: "listOfTypes" }], (a) => {
-    const t = asTable(a[0]!, "Table.ColumnsOfType");
-    const wanted = new Set((a[1]!.kind === "list" ? a[1]!.items : [a[1]!]).map((v) => (v.kind === "type" ? v.name : "")));
-    return list(t.columns.filter((c) => wanted.has(t.types?.get(c) ?? "any")).map(text));
-  }));
   def("Table.FromValue", fn("Table.FromValue", [{ name: "value" }, { name: "options", optional: true }], (a) => {
     const v = a[0]!;
     if (v.kind === "list") return table(["Value"], v.items.map((x) => [x]));

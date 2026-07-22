@@ -160,7 +160,8 @@ export function registerList(env: Env): void {
   def("List.Alternate", fn("List.Alternate", [{ name: "list" }, { name: "count" }, { name: "repeatInterval", optional: true }, { name: "offset", optional: true }], (a) => {
     const items = listOf(a[0]!, "List.Alternate");
     const count = numOf(a[1]!, "count");
-    const repeat = a[2] && a[2].kind === "number" ? a[2].value : 1;
+    // Omitting repeatInterval keeps everything after the single removal (oracle-confirmed).
+    const repeat = a[2] && a[2].kind === "number" ? a[2].value : Infinity;
     const offset = a[3] && a[3].kind === "number" ? a[3].value : 0;
     const out: MValue[] = items.slice(0, offset);
     let i = offset;
