@@ -132,6 +132,8 @@ export function registerDateTime(env: Env): void {
     }
     return { kind: "list", items: out };
   }));
+  def("Date.DaysInMonth", nn("Date.DaysInMonth", [{ name: "date" }], (a) => { const d = asDateish(a[0]!, "Date.DaysInMonth"); return number(daysInMonth(d.y, d.m)); }));
+  def("Date.AddQuarters", nn("Date.AddQuarters", [{ name: "date" }, { name: "numberOfQuarters" }], (a) => shift(a[0]!, 0, numOf(a[1]!, "quarters") * 3, 0)));
   def("Date.QuarterOfYear", nn("Date.QuarterOfYear", [{ name: "date" }], (a) => number(Math.floor((asDateish(a[0]!, "Date.QuarterOfYear").m - 1) / 3) + 1)));
   def("Date.StartOfQuarter", nn("Date.StartOfQuarter", [{ name: "date" }], (a) => keepKind(a[0]!, (d) => ({ ...d, m: Math.floor((d.m - 1) / 3) * 3 + 1, d: 1 }), true)));
   def("Date.EndOfQuarter", nn("Date.EndOfQuarter", [{ name: "date" }], (a) => keepKind(a[0]!, (d) => { const m = Math.floor((d.m - 1) / 3) * 3 + 3; return { y: d.y, m, d: daysInMonth(d.y, m) }; }, false)));

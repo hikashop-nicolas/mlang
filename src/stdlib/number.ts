@@ -4,6 +4,8 @@ import type { Env } from "../interpret.js";
 import { NULL, err, number, type MValue } from "../values.js";
 import { fn, numOf } from "./helpers.js";
 import { formatNumber } from "../format.js";
+import { numberFrom } from "./convert.js";
+import { cultureOf } from "../culture.js";
 
 const nn = (name: string, params: { name: string; optional?: boolean }[], f: (args: MValue[]) => MValue) =>
   fn(name, params, (a) => (a[0] && a[0].kind === "null" ? NULL : f(a)));
@@ -23,6 +25,18 @@ export function roundToEven(x: number, digits: number): number {
 
 export function registerNumber(env: Env): void {
   const def = (name: string, v: MValue): void => env.defineValue(name, v);
+
+  def("Number.PositiveInfinity", number(Infinity));
+  def("Number.NegativeInfinity", number(-Infinity));
+  def("Number.NaN", number(NaN));
+  def("Number.Epsilon", number(Number.EPSILON));
+  def("Number.FromText", fn("Number.FromText", [{ name: "text" }, { name: "culture", optional: true }], (a) =>
+    numberFrom(a[0]!, cultureOf(a[1]?.kind === "text" ? a[1].value : null))));
+  // Int64.From: convert then round to a whole number (banker's rounding, oracle-checked).
+  def("Int64.From", fn("Int64.From", [{ name: "value" }, { name: "culture", optional: true }], (a) => {
+    const v = numberFrom(a[0]!, cultureOf(a[1]?.kind === "text" ? a[1].value : null));
+    return v.kind === "number" ? number(roundToEven(v.value, 0)) : v;
+  }));
 
   def("Number.Abs", nn("Number.Abs", [{ name: "number" }], (a) => number(Math.abs(numOf(a[0]!, "Number.Abs")))));
   def("Number.Sign", nn("Number.Sign", [{ name: "number" }], (a) => number(Math.sign(numOf(a[0]!, "Number.Sign")))));

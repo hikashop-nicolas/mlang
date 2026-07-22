@@ -51,6 +51,20 @@ export function registerRecord(env: Env): void {
     return { kind: "table", columns: ["Name", "Value"], rows: [...r.fields].map(([k, v]) => [text(k), v]) };
   }));
   def("Record.FieldValues", fn("Record.FieldValues", [{ name: "record" }], (a) => list([...rec(a[0]!, "Record.FieldValues").fields.values()])));
+  def("Record.Combine", fn("Record.Combine", [{ name: "records" }], (a) => {
+    const fields = new Map<string, MValue>();
+    for (const r of (a[0]!.kind === "list" ? a[0]!.items : [a[0]!])) for (const [k, v] of rec(r, "Record.Combine").fields) fields.set(k, v);
+    return { kind: "record", fields };
+  }));
+  def("Record.FromTable", fn("Record.FromTable", [{ name: "table" }], (a) => {
+    const t = expect(a[0]!, "table", "Record.FromTable");
+    const nameI = t.columns.indexOf("Name");
+    const valI = t.columns.indexOf("Value");
+    if (nameI < 0 || valI < 0) err("Expression.Error", "Record.FromTable: table needs Name and Value columns.");
+    const fields = new Map<string, MValue>();
+    for (const row of t.rows) fields.set(textOf(row[nameI] ?? NULL, "field name"), row[valI] ?? NULL);
+    return { kind: "record", fields };
+  }));
   def("Record.FromList", fn("Record.FromList", [{ name: "values" }, { name: "fields" }], (a) => {
     const vals = a[0]!.kind === "list" ? a[0]!.items : err("Expression.Error", "Record.FromList: values must be a list.");
     const names = namesOf(a[1]!, "Record.FromList field");

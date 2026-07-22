@@ -1,7 +1,7 @@
 // Text.* functions plus Splitter.*, Combiner-free Tier-1 subset, and Replacer.*.
 import type { Env } from "../interpret.js";
 import { NULL, err, list, logical, number, text, type MValue } from "../values.js";
-import { fn, listOf, numOf, textOf } from "./helpers.js";
+import { fn, listOf, numOf, textOf, truthy } from "./helpers.js";
 import { numberFrom, textFrom } from "./convert.js";
 import { cultureOf } from "../culture.js";
 
@@ -153,6 +153,47 @@ export function registerText(env: Env): void {
   }));
 
   def("Text.ToList", nn("Text.ToList", [{ name: "text" }], (a) => list([...textOf(a[0]!, "Text.ToList")].map(text))));
+  def("Text.Remove", nn("Text.Remove", [{ name: "text" }, { name: "removeChars" }], (a) => {
+    const drop = new Set((a[1]!.kind === "list" ? a[1]!.items.map((v) => textOf(v, "Text.Remove")) : [textOf(a[1]!, "Text.Remove")]).flatMap((s) => [...s]));
+    return text([...textOf(a[0]!, "Text.Remove")].filter((c) => !drop.has(c)).join(""));
+  }));
+
+  // Combiners (the inverse of splitters; used by Table.CombineColumns).
+  def("Combiner.CombineTextByDelimiter", fn("Combiner.CombineTextByDelimiter", [{ name: "delimiter" }, { name: "quoteStyle", optional: true }], (a) => {
+    const d = textOf(a[0]!, "delimiter");
+    return fn("combiner", [{ name: "parts" }], (b) => text(listOf(b[0]!, "combine").map((v) => (v.kind === "null" ? "" : textOf(v, "combine"))).join(d)));
+  }));
+  def("Combiner.CombineTextByEachDelimiter", fn("Combiner.CombineTextByEachDelimiter", [{ name: "delimiters" }, { name: "quoteStyle", optional: true }], (a) => {
+    const ds = listOf(a[0]!, "delimiters").map((v) => textOf(v, "delimiter"));
+    return fn("combiner", [{ name: "parts" }], (b) => {
+      const parts = listOf(b[0]!, "combine").map((v) => (v.kind === "null" ? "" : textOf(v, "combine")));
+      let out = parts[0] ?? "";
+      for (let i = 1; i < parts.length; i++) out += (ds[i - 1] ?? "") + parts[i];
+      return text(out);
+    });
+  }));
+  // Split where the character class changes between two sets (e.g. letters<->digits).
+  def("Splitter.SplitTextByCharacterTransition", fn("Splitter.SplitTextByCharacterTransition", [{ name: "before" }, { name: "after" }], (a) => {
+    const inSet = (spec: MValue, ch: string): boolean => {
+      if (spec.kind === "function") return truthy(spec.call([text(ch)]));
+      if (spec.kind === "list") return spec.items.some((v) => textOf(v, "transition").includes(ch));
+      return textOf(spec, "transition").includes(ch);
+    };
+    return fn("splitter", [{ name: "text" }], (b) => {
+      const s = textOf(b[0]!, "split input");
+      const out: string[] = [];
+      let cur = "";
+      for (let i = 0; i < s.length; i++) {
+        cur += s[i]!;
+        if (i + 1 < s.length && inSet(a[0]!, s[i]!) && inSet(a[1]!, s[i + 1]!)) {
+          out.push(cur);
+          cur = "";
+        }
+      }
+      out.push(cur);
+      return list(out.map(text));
+    });
+  }));
   def("Text.SplitAny", nn("Text.SplitAny", [{ name: "text" }, { name: "separators" }], (a) => {
     const seps = [...textOf(a[1]!, "Text.SplitAny")];
     const re = new RegExp(`[${seps.map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("")}]`);

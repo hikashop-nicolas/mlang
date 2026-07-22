@@ -128,6 +128,18 @@ export function registerList(env: Env): void {
   }));
 
   def("List.IsEmpty", fn("List.IsEmpty", [{ name: "list" }], (a) => logical(listOf(a[0]!, "List.IsEmpty").length === 0)));
+  def("List.AnyTrue", fn("List.AnyTrue", [{ name: "list" }], (a) => logical(listOf(a[0]!, "List.AnyTrue").some(truthy))));
+  def("List.AllTrue", fn("List.AllTrue", [{ name: "list" }], (a) => logical(listOf(a[0]!, "List.AllTrue").every(truthy))));
+  def("List.Product", numericFold("List.Product", (ns) => ns.reduce((p, x) => p * x, 1)));
+  const takeN = (name: string, cmp: (a: number, b: number) => number) =>
+    fn(name, [{ name: "list" }, { name: "countOrCondition" }], (a) => {
+      const nums = listOf(a[0]!, name).filter((v) => v.kind !== "null");
+      const sorted = [...nums].sort((x, y) => cmp(numOf(x, name), numOf(y, name)));
+      const n = numOf(a[1]!, "count");
+      return list(sorted.slice(0, n));
+    });
+  def("List.MinN", takeN("List.MinN", (x, y) => x - y));
+  def("List.MaxN", takeN("List.MaxN", (x, y) => y - x));
   def("List.Difference", fn("List.Difference", [{ name: "list1" }, { name: "list2" }, { name: "equationCriteria", optional: true }], (a) => {
     const remove = listOf(a[1]!, "List.Difference");
     return list(listOf(a[0]!, "List.Difference").filter((v) => !remove.some((r) => equals(r, v))));

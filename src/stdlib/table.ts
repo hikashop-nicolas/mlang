@@ -66,6 +66,44 @@ export function registerTable(env: Env): void {
     const t = asTable(a[0]!, "Table.ToRecords");
     return list(t.rows.map((_, i) => rowRecord(t, i)));
   }));
+  def("Table.Transpose", fn("Table.Transpose", [{ name: "table" }, { name: "columns", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.Transpose");
+    const width = t.rows.length;
+    const columns = a[1] ? namesOf(a[1], "column") : Array.from({ length: width }, (_, i) => `Column${i + 1}`);
+    const rows = t.columns.map((_, ci) => t.rows.map((r) => r[ci] ?? NULL));
+    return table(columns, rows);
+  }));
+  def("Table.TransformRows", fn("Table.TransformRows", [{ name: "table" }, { name: "transform" }], (a) => {
+    const t = asTable(a[0]!, "Table.TransformRows");
+    return list(t.rows.map((_, i) => callFn(a[1]!, [rowRecord(t, i)])));
+  }));
+  def("Table.ExpandListColumn", fn("Table.ExpandListColumn", [{ name: "table" }, { name: "column" }], (a) => {
+    const t = asTable(a[0]!, "Table.ExpandListColumn");
+    const ci = colIndex(t, textOf(a[1]!, "column"));
+    const rows: MValue[][] = [];
+    for (const r of t.rows) {
+      const cell = r[ci] ?? NULL;
+      const items = cell.kind === "list" ? cell.items : [cell];
+      if (items.length === 0) rows.push([...r.slice(0, ci), NULL, ...r.slice(ci + 1)]);
+      else for (const it of items) rows.push([...r.slice(0, ci), it, ...r.slice(ci + 1)]);
+    }
+    return table(t.columns, rows, t.types);
+  }));
+  def("Table.CombineColumns", fn("Table.CombineColumns", [{ name: "table" }, { name: "sourceColumns" }, { name: "combiner" }, { name: "column" }], (a) => {
+    const t = asTable(a[0]!, "Table.CombineColumns");
+    const srcIdx = namesOf(a[1]!, "column").map((c) => colIndex(t, c));
+    const newName = textOf(a[3]!, "new column name");
+    const keep = t.columns.map((_, i) => i).filter((i) => !srcIdx.includes(i));
+    const columns = [...keep.map((i) => t.columns[i]!), newName];
+    const rows = t.rows.map((r) => [...keep.map((i) => r[i] ?? NULL), callFn(a[2]!, [list(srcIdx.map((i) => r[i] ?? NULL))])]);
+    return table(columns, rows);
+  }));
+  // No per-cell error values in our model, so these validate and pass through / select none.
+  def("Table.RemoveRowsWithErrors", fn("Table.RemoveRowsWithErrors", [{ name: "table" }, { name: "columns", optional: true }], (a) => asTable(a[0]!, "Table.RemoveRowsWithErrors")));
+  def("Table.SelectRowsWithErrors", fn("Table.SelectRowsWithErrors", [{ name: "table" }, { name: "columns", optional: true }], (a) => {
+    const t = asTable(a[0]!, "Table.SelectRowsWithErrors");
+    return table(t.columns, [], t.types);
+  }));
   // We never produce per-cell error values (FIDELITY: AddColumn stores null), so there is
   // nothing to replace - this validates the columns and returns the table unchanged.
   def("Table.ReplaceErrorValues", fn("Table.ReplaceErrorValues", [{ name: "table" }, { name: "errorReplacement" }], (a) => {

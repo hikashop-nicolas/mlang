@@ -2,7 +2,7 @@
 // entry points that let queries process embedded data. From the public reference; the
 // CSV/JSON option shapes not covered raise precise errors.
 import type { Env } from "../interpret.js";
-import { NULL, err, list, logical, table, text, type MFunction, type MValue } from "../values.js";
+import { NULL, err, list, logical, number, table, text, type MFunction, type MValue } from "../values.js";
 import { fn, listOf, textOf, type Table } from "./helpers.js";
 import { fromJson } from "../host.js";
 
@@ -181,6 +181,31 @@ export function registerDocument(env: Env): void {
     if (a[0]!.kind !== "function") err("Expression.Error", "Function.Invoke: first argument must be a function.");
     return a[0]!.call(a[1]!.kind === "list" ? a[1]!.items : [a[1]!]);
   }));
+  // InvokeAfter delays in Excel; deterministic here, so invoke immediately.
+  def("Function.InvokeAfter", fn("Function.InvokeAfter", [{ name: "function" }, { name: "delay" }], (a) => {
+    if (a[0]!.kind !== "function") err("Expression.Error", "Function.InvokeAfter: first argument must be a function.");
+    return a[0]!.call([]);
+  }));
+
+  def("Type.ToText", fn("Type.ToText", [{ name: "type" }], (a) => text(a[0]!.kind === "type" ? a[0]!.name : a[0]!.kind)));
+  def("Value.FromText", fn("Value.FromText", [{ name: "text" }, { name: "culture", optional: true }], (a) => {
+    const s = textOf(a[0]!, "Value.FromText").trim();
+    if (s === "") return NULL;
+    if (s === "true") return logical(true);
+    if (s === "false") return logical(false);
+    if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(s)) return number(Number(s));
+    return text(s);
+  }));
+  def("Binary.Buffer", fn("Binary.Buffer", [{ name: "binary" }], (a) => a[0]!)); // eager already
+
+  // Expression.Evaluate (dynamic M eval) is deferred: it needs a synchronous parse the async
+  // evaluator can't provide inside a sync call, and it's used mainly by test frameworks.
+  def("Expression.Identifier", fn("Expression.Identifier", [{ name: "name" }], (a) => text(quoteIdentifier(textOf(a[0]!, "Expression.Identifier")))));
+}
+
+/** Quote an identifier that isn't a bare identifier (as Excel's Expression.Identifier does). */
+function quoteIdentifier(name: string): string {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? name : `#"${name.replace(/"/g, '""')}"`;
 }
 
 function logicalTrue(v: MValue): boolean {
