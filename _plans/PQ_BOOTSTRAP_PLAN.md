@@ -54,7 +54,9 @@ Query names come from the section M: `shared NAME = ...;` (and `shared #"quoted 
   the first `shared` member; on save, sheetedit calls `writeWorkbookSectionM` (now bootstrap-capable).
 - Loading results already works (`loadResultToNewSheet` / existing table).
 
-## Phases
+## Phases (1-3 DONE)
+
+Status: mlang bootstrap shipped (createWorkbookQueries + syncWorkbookQueryParts, round-trip tested); sheetedit always-on editor entry wired and browser-verified end to end (create query in a query-less xlsx -> save -> reopen finds it). Phase 4 (Excel-native metadata envelope) pending a Windows Excel check.
 
 1. mlang: `queryNamesFromSectionM` + `buildDataMashup` + `createWorkbookQueries` + make
    `writeWorkbookSectionM` bootstrap. Round-trip tests: create from `{}` -> `readWorkbookQueries`
