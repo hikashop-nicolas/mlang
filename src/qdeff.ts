@@ -168,13 +168,108 @@ export function readWorkbookQueries(entries: Record<string, Uint8Array>): Workbo
 }
 
 /** Rewrite a workbook's Section1.m in place, returning updated entries. The DataMashup item
-    part is re-encoded in its original byte encoding; all other parts are untouched. Throws if
-    the workbook has no query payload. */
-export function writeWorkbookSectionM(entries: Record<string, Uint8Array>, newSectionM: string): Record<string, Uint8Array> {
+    part is re-encoded in its original byte encoding; all other parts are untouched. When the
+    workbook has no query payload yet, a fresh one is bootstrapped (see createWorkbookQueries). */
+export function writeWorkbookSectionM(entries: Record<string, Uint8Array>, newSectionM: string, guid?: string): Record<string, Uint8Array> {
   const found = readWorkbookQueries(entries);
-  if (!found) throw new Error("qdeff: workbook has no Power Query payload to edit");
+  if (!found) return createWorkbookQueries(entries, newSectionM, guid);
   const payload = serializeDataMashup(found.mashup, newSectionM);
   const original = entries[found.itemPath]!;
   const newXml = replaceDataMashupInItemXml(decodeOoxmlText(original), payload);
   return { ...entries, [found.itemPath]: encodeOoxmlText(newXml, original) };
+}
+
+// ---- Bootstrapping a workbook that has no Power Query payload ----
+
+const DS_NS = "http://schemas.openxmlformats.org/officeDocument/2006/customXml";
+const REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
+const enc = (s: string): Uint8Array => new TextEncoder().encode(s);
+const xmlEsc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+const PKG_CONTENT_TYPES = `<?xml version="1.0" encoding="utf-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="text/xml"/><Default Extension="m" ContentType="application/x-ms-m"/></Types>`;
+const PKG_PACKAGE = `<?xml version="1.0" encoding="utf-8"?><Package xmlns="http://schemas.microsoft.com/DataMashup/Package"><Version>2.0</Version><MinVersion>1.0</MinVersion><Culture>en-US</Culture></Package>`;
+const PERMISSIONS = `<?xml version="1.0" encoding="utf-8"?><PermissionList xmlns:xsd="http://www.w3.org/2001/XMLSchema"><CanEvaluateFuturePackages>false</CanEvaluateFuturePackages><FirewallEnabled>true</FirewallEnabled></PermissionList>`;
+
+/** The query names (shared members) declared in a Section1.m document. */
+export function queryNamesFromSectionM(sectionM: string): string[] {
+  const names: string[] = [];
+  const re = /\bshared\s+(?:#"([^"]+)"|([A-Za-z_][\w.]*))\s*=/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(sectionM))) names.push((m[1] ?? m[2])!);
+  return names;
+}
+
+/** A minimal DataMashup wrapping the given Section1.m (empty metadata + permission bindings). */
+export function buildDataMashup(sectionM: string): DataMashup {
+  return {
+    version: 0,
+    parts: {
+      "[Content_Types].xml": enc(PKG_CONTENT_TYPES),
+      "Config/Package.xml": enc(PKG_PACKAGE),
+      "Formulas/Section1.m": withUtf8Bom(sectionM),
+    },
+    permissionsXml: PERMISSIONS,
+    permissionsBytes: enc(PERMISSIONS),
+    metadataBytes: new Uint8Array(0),
+    permissionBindings: new Uint8Array(0),
+    sectionM,
+  };
+}
+
+/** The xl/connections.xml body: one Mashup OLE DB connection (type 5) per query. */
+export function connectionsXml(names: string[]): string {
+  const conns = names.map((n, i) => {
+    const e = xmlEsc(n);
+    return `<connection id="${i + 1}" keepAlive="1" name="Query - ${e}" description="Connection to the '${e}' query in the workbook." type="5" refreshedVersion="0" background="1">` +
+      `<dbPr connection="Provider=Microsoft.Mashup.OleDb.1;Data Source=$Workbook$;Location=${e};Extended Properties=&quot;&quot;" command="SELECT * FROM [${e}]"/></connection>`;
+  }).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<connections xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${conns}</connections>`;
+}
+
+function addContentTypeOverride(entries: Record<string, Uint8Array>, partName: string, contentType: string): void {
+  const path = "[Content_Types].xml";
+  const bytes = entries[path];
+  if (!bytes) return;
+  let xml = decodeOoxmlText(bytes);
+  if (xml.includes(`PartName="${partName}"`)) return;
+  xml = xml.replace("</Types>", `<Override PartName="${partName}" ContentType="${contentType}"/></Types>`);
+  entries[path] = enc(xml);
+}
+
+function addWorkbookRel(entries: Record<string, Uint8Array>, type: string, target: string): void {
+  const path = "xl/_rels/workbook.xml.rels";
+  let xml = entries[path] ? decodeOoxmlText(entries[path]!) : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${REL_NS}"></Relationships>`;
+  if (xml.includes(`Target="${target}"`)) return;
+  const ids = [...xml.matchAll(/Id="rId(\d+)"/g)].map((m) => Number(m[1]));
+  const id = `rId${(ids.length ? Math.max(...ids) : 0) + 1}`;
+  xml = xml.replace("</Relationships>", `<Relationship Id="${id}" Type="${type}" Target="${target}"/></Relationships>`);
+  entries[path] = enc(xml);
+}
+
+/** Ensure xl/connections.xml (+ its content-type and workbook rel) lists exactly the current
+    query names. A no-op key set when there are no queries. */
+export function syncWorkbookQueryParts(entries: Record<string, Uint8Array>, sectionM: string): Record<string, Uint8Array> {
+  const out = { ...entries };
+  const names = queryNamesFromSectionM(sectionM);
+  if (!names.length) return out;
+  out["xl/connections.xml"] = enc(connectionsXml(names));
+  addContentTypeOverride(out, "/xl/connections.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.connections+xml");
+  addWorkbookRel(out, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/connections", "connections.xml");
+  return out;
+}
+
+/** Bootstrap a full Power Query payload into a workbook that has none: the DataMashup customXml
+    item (+ itemProps + rels), the connections, and the content-type/rel registrations. `guid`
+    is the datastore item id (mlang has no RNG; the caller supplies one). */
+export function createWorkbookQueries(entries: Record<string, Uint8Array>, sectionM: string, guid?: string): Record<string, Uint8Array> {
+  const payload = serializeDataMashup(buildDataMashup(sectionM));
+  const itemXml = `<?xml version="1.0" encoding="utf-8"?><DataMashup xmlns="http://schemas.microsoft.com/DataMashup">${toBase64(payload)}</DataMashup>`;
+  const g = guid ?? "{00000000-0000-0000-0000-000000000000}";
+  const out = { ...entries };
+  out["customXml/item1.xml"] = enc(itemXml);
+  out["customXml/itemProps1.xml"] = enc(`<?xml version="1.0" encoding="UTF-8" standalone="no"?><ds:datastoreItem ds:itemID="${g}" xmlns:ds="${DS_NS}"><ds:schemaRefs><ds:schemaRef ds:uri="http://schemas.microsoft.com/DataMashup"/></ds:schemaRefs></ds:datastoreItem>`);
+  out["customXml/_rels/item1.xml.rels"] = enc(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${REL_NS}"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps" Target="itemProps1.xml"/></Relationships>`);
+  addContentTypeOverride(out, "/customXml/itemProps1.xml", "application/vnd.openxmlformats-officedocument.customXmlProperties+xml");
+  addWorkbookRel(out, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml", "../customXml/item1.xml");
+  return syncWorkbookQueryParts(out, sectionM);
 }

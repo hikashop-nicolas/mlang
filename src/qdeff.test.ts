@@ -110,8 +110,10 @@ describe("qdeff", () => {
       expect(q.mashup.sectionM).toBe(NEW);
     });
 
-    it("throws when there is no query payload", () => {
-      expect(() => writeWorkbookSectionM({ "xl/workbook.xml": strToU8("<x/>") }, "section Section1;")).toThrow(/no Power Query/);
+    it("bootstraps a payload when the workbook has none", () => {
+      const out = writeWorkbookSectionM({ "xl/workbook.xml": strToU8("<x/>") }, "section Section1;\nshared Q = 1;");
+      expect(readWorkbookQueries(out)).not.toBeNull();
+      expect(readWorkbookQueries(out)!.mashup.sectionM).toContain("shared Q");
     });
   });
 });
